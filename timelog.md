@@ -35,5 +35,22 @@
 
 ### 17 Oct 2021
 
-* *2 hours* Researched OpenCL and wrote example1 equivalent programs
+* *2 hours* Researched OpenCL and wrote example equivalent programs
 
+### 18 Oct 2021
+
+* *2 hours* Started experimenting and learning to use pycparser
+
+## Week 3
+
+### 19 Oct 2021
+
+* *0.5 hour* meeting with supervisor
+
+### 22 Oct 2021
+
+* *4 hours* Worked on getting a working OpenCL setup, and running examples from Nvidia and GitHub
+
+### 25 Oct 2021
+
+* *4 hours* Wrote initial translation code, to translate simple for loop functions directly to OpenCL kernels
