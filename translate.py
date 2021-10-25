@@ -1,25 +1,26 @@
 from pycparser import c_ast, c_generator
 
-def translate_function(ast):
+def translate_function(ast, lvl_indent=0):
     output = ""
+    whitespace = "    " * lvl_indent
     func_def = ast.ext[0]
     func_name = func_def.decl.name
     func_type = func_def.decl.type.type.type.names[0]
 
-    output += "__kernel " + func_type + " " + func_name + "("
+    output += whitespace + "__kernel " + func_type + " " + func_name + "("
 
     for i, param in enumerate(func_def.decl.type.args):
         if i != 0: output += ", "
-        output += translate_declaration(param.type) + " " + param.name
+        output += translate_declaration(param.type, lvl_indent+1) + " " + param.name
     output += ") {\n"
 
     for_loop = func_def.body.block_items[0]
-    output += translate_for(for_loop)
+    output += translate_for(for_loop, lvl_indent+1)
     output += "}\n"
 
     return output
 
-def translate_declaration(node):
+def translate_declaration(node, lvl_indent=0):
     output = ""
     if type(node) == c_ast.PtrDecl:
         output += "__global "
@@ -29,22 +30,23 @@ def translate_declaration(node):
         output += " ".join(node.type.names)
     return output
 
-def translate_for(node):
+def translate_for(node, lvl_indent=0):
     output = ""
+    whitespace = "    " * lvl_indent
     indexes = []
     for decl in node.init:
         indexes.append(decl.name)
 
     for i, index in enumerate(indexes):
-        output += f"int {index} = get_global_id({i});\n"
+        output += whitespace + f"int {index} = get_global_id({i});\n"
 
     cond = node.cond
-    output += "if(!("
+    output += whitespace + "if(!("
     output += cond.left.name + " " + cond.op + " " + cond.right.name + "))\n"
-    output += "return;\n"
+    output += whitespace + "    " + "return;\n"
 
     generator = c_generator.CGenerator()
     for stmt in node.stmt:
-        output += generator.visit(stmt) + ";\n"
+        output += whitespace + generator.visit(stmt) + ";\n"
 
     return output
