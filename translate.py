@@ -18,6 +18,7 @@ def translate_function(ast):
 def translate_declaration(node):
     output = ""
     if type(node) == c_ast.PtrDecl:
+        output += "__global "
         output += translate_declaration(node.type)
         output += "*"
     elif type(node) == c_ast.TypeDecl:
