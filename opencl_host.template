@@ -1,0 +1,162 @@
+#ifndef OSX
+//#define CL_USE_DEPRECATED_OPENCL_1_1_APIS
+#include <CL/cl.h>
+#else
+#include <OpenCL/opencl.h>
+#endif
+
+int main() {
+    cl_int err;
+
+    size_t global;
+    size_t local;
+
+    cl_device_id device_id;
+    cl_context context;
+    cl_command_queue command_queue;
+    cl_program program;
+    cl_kernel kernel;
+    <INPUT BUFFERS>
+    <OUTPUT BUFFERS>
+
+    FILE *source_file;
+    size_t source_size;
+    char *source_buffer;
+
+    cl_uint number_of_platforms;
+    cl_platform_id *platforms;
+
+    // Retrieve available platforms and devices on those platforms,
+    // and choose one to execute our kernel
+    err = clGetPlatformIDs(0, NULL, &number_of_platforms);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to get number of platform: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    err = clGetPlatformIDs(number_of_platforms, platforms, NULL);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to get platform IDs: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    err = clGetDeviceIDs(platforms[0], CL_DEVICE_TYPE_ALL, 1, &device_id, NULL);
+    if (err != CL_SUCCESS)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to get device IDs: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Create context and command queue using chosen device
+    context = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
+    if (!context)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create context: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    command_queue = clCreateCommandQueue(context, device_id, 0, &err);
+    if (!command_queue)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create command queue: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Read source file into buffer
+    source_file = fopen("./firmware.cl", "r");
+    fseek(source_file, 0, SEEK_END);
+    source_size = ftell(source_file);
+    rewind(source_file);
+
+    source_buffer = (char*)malloc(programSize + 1);
+    source_buffer[source_size] = '\0';
+    fread(source_buffer, sizeof(char), source_size, source_file);
+    fclose(source_file);
+
+    // Create program, compile and create kernel
+    program = clCreateProgramWithSource(context, 1, (const char**) &source_buffer, &source_size, &err);
+    free(source_buffer);
+    if (!program)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create program with source: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+    if (err != CL_SUCCESS)
+    {
+        size_t len;
+        char buffer[2048];
+
+        fprintf(stderr,"OpenCL Error: Failed to build program executable: %d!\n", err);
+        clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
+        fprintf(stderr,"%s\n", buffer);
+        exit(EXIT_FAILURE);
+    }
+
+    kernel = clCreateKernel(program, "translated_kernel", &err);
+    if (!kernel || err != CL_SUCCESS)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create kernel: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Get maximum local workgroup size
+    err = clGetKernelWorkGroupInfo(kernel, device_id, CL_KERNEL_WORK_GROUP_SIZE, sizeof(local), &local, NULL);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to retrieve kernel work group info: %d\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Create buffers
+    <CREATE BUFFERS>
+
+    // Write to input buffers
+    <WRITE TO INPUT BUFFERS>
+
+    // Set kernel arguments
+    <SET KERNEL ARGUMENTS>
+
+    // Enqueue and run kernel
+    err = clEnqueueNDRangeKernel(command_queue, kernel, 1, NULL, &global, /*&local*/NULL, 0, NULL, NULL);
+    if(err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to enqueue kernel: %d\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Block until kernel is finished
+    err = clFinish(command_queue);
+    if(err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to block until queue finished: %d\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Read back output buffers
+    <READ FROM OUTPUT BUFFERS>
+
+    // Free buffers
+    <RELEASE BUFFERS>
+
+
+    // Release allocated OpenCL resources
+    err = clReleaseProgram(program);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release program: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+    err = clReleaseKernel(kernel);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release kernel: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+    err = clReleaseCommandQueue(command_queue);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release command queue: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+    err = clReleaseContext(context);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release context: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+}
