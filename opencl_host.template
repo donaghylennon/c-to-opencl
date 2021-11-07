@@ -21,7 +21,8 @@ int main() {
     <INPUT BUFFERS>
     <OUTPUT BUFFERS>
 
-    FILE *source_file = <SOURCE FILEPATH>;
+    const char *filepath = <SOURCE FILEPATH>;
+    FILE *source_file;
     size_t source_size;
     char *source_buffer;
 
@@ -65,7 +66,7 @@ int main() {
     }
 
     // Read source file into buffer
-    source_file = fopen("./firmware.cl", "r");
+    source_file = fopen(filepath, "r");
     fseek(source_file, 0, SEEK_END);
     source_size = ftell(source_file);
     rewind(source_file);
