@@ -6,9 +6,11 @@
 #endif
 
 int main() {
+    <PRE KERNEL HOST CODE>
+
     cl_int err;
 
-    size_t global;
+    size_t global = <GLOBAL DOMAIN SIZE>;
     size_t local;
 
     cl_device_id device_id;
@@ -19,7 +21,7 @@ int main() {
     <INPUT BUFFERS>
     <OUTPUT BUFFERS>
 
-    FILE *source_file;
+    FILE *source_file = <SOURCE FILEPATH>;
     size_t source_size;
     char *source_buffer;
 
@@ -159,4 +161,6 @@ int main() {
         fprintf(stderr,"OpenCL Error: Failed to release context: %d!\n", err);
         exit(EXIT_FAILURE);
     }
+
+    <POST KERNEL HOST CODE>
 }
