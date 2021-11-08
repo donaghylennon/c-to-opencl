@@ -37,11 +37,11 @@
 
 * *2 hours* Researched OpenCL and wrote example equivalent programs
 
+## Week 3
+
 ### 18 Oct 2021
 
 * *2 hours* Started experimenting and learning to use pycparser
-
-## Week 3
 
 ### 19 Oct 2021
 
@@ -51,6 +51,28 @@
 
 * *4 hours* Worked on getting a working OpenCL setup, and running examples from Nvidia and GitHub
 
-### 25 Oct 2021
+### 24 Oct 2021
 
 * *4 hours* Wrote initial translation code, to translate simple for loop functions directly to OpenCL kernels
+
+## Week 4
+
+### 27 Oct 2021
+
+* *2 hours* Studied paper on translation of OpenMP code to GPGPU code
+
+### 28 Oct 2021
+
+* *1.5 hours* Studied paper on parallelization of loop nests
+
+### 30 Oct 2021
+
+* *3 hours* Gathered and read more possibly useful papers
+
+## Week 5
+
+### 7 Oct 2021
+
+* *2.5 hours* Wrote a first version of the template for host side boilerplate code
+
+* *4 hours* Started to write some code to generate host side boilerplate
