@@ -1,6 +1,7 @@
 import argparse
 import pycparser
-import translate
+
+import translate, host
 
 def main():
     argparser = argparse.ArgumentParser()
