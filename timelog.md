@@ -71,8 +71,14 @@
 
 ## Week 5
 
-### 7 Oct 2021
+### 7 Nov 2021
 
 * *2.5 hours* Wrote a first version of the template for host side boilerplate code
 
 * *4 hours* Started to write some code to generate host side boilerplate
+
+## Week 6
+
+### 8 Nov 2021
+
+* *3.5 hours* Continued working on code to generate host side boilerplate
