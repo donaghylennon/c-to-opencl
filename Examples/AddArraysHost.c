@@ -10,8 +10,8 @@ int main() {
     int a[BUF_SZ], b[BUF_SZ], c[BUF_SZ];
 
     for (int i = 0; i < BUF_SZ; i++) {
-        a[i] = i;
-        b[i] = BUF_SZ - i;
+        b[i] = i;
+        c[i] = BUF_SZ - i;
     }
 
     AddArrays(a, b, c, BUF_SZ);
