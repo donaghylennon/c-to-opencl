@@ -10,6 +10,7 @@ class HostDetails:
         self.buffers = buffers
         self.kernel_args = kernel_args
 
+    @staticmethod
     def from_ast(ast):
         buffers = []
         kernel_args = []
