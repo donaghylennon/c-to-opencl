@@ -1,19 +1,24 @@
 from enum import Enum, auto
-from pycparser import c_ast
+from pycparser import c_ast, c_generator
 
 
 class HostDetails:
-    __slots__ = 'global_domain_sz', 'buffers', 'kernel_args'
+    __slots__ = 'global_domain_sz', 'buffers', 'kernel_args', 'kernel_name', 'pre_kernel_code', 'post_kernel_code'
 
-    def __init__(self, global_domain_sz, buffers, kernel_args):
+    def __init__(self, global_domain_sz, buffers, kernel_args, kernel_name, pre_kernel_code, post_kernel_code):
         self.global_domain_sz = global_domain_sz
         self.buffers = buffers
         self.kernel_args = kernel_args
+        self.kernel_name = kernel_name
+        self.pre_kernel_code = pre_kernel_code
+        self.post_kernel_code = post_kernel_code
 
     @staticmethod
     def from_ast(ast):
         buffers = []
         kernel_args = []
+        pre_kernel_code = ""
+        post_kernel_code = ""
 
         # Assume first external declaration in file is function to be translated
         func_def = ast.ext[0]
@@ -48,10 +53,20 @@ class HostDetails:
 
             kernel_args.append(KernelArg(arg_type, input_var, buffer_size))
 
+        pre_func_call = True
+        generator = c_generator.CGenerator()
+        for stmt in main_func.body.block_items:
+            if stmt == func_call:
+                pre_func_call = False
+            elif pre_func_call:
+                pre_kernel_code += generator.visit(stmt) + ';\n\t'
+            else:
+                post_kernel_code += generator.visit(stmt) + ';\n\t'
+
         # assume first buffer's size is domain size for now
         global_domain_sz = kernel_args[0].buffer_size
 
-        return HostDetails(global_domain_sz, buffers, kernel_args)
+        return HostDetails(global_domain_sz, buffers, kernel_args, func_name, pre_kernel_code, post_kernel_code)
 
     def generate_code(self, kernel_path):
         assign_constants = ""
@@ -69,21 +84,50 @@ class HostDetails:
         for i, arg in enumerate(self.kernel_args):
             if arg.argument_type == ArgType.BUFFER:
                 buffer_decls += f"cl_mem {arg.input_var}_clbuffer;\n\t"
-                create_buffers += f"{arg.input_var}_clbuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, {arg.buffer_size}*sizeof(int), NULL, &err);\n\t"
-                write_to_buffers += f"err = clEnqueueWriteBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t"
-                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), &{arg.input_var}_clbuffer);\n\t"
-                read_from_buffers += f"err = clEnqueueReadBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t"
-                release_buffers += f"err = clReleaseMemObject({arg.input_var}_clbuffer);\n\t"
+                create_buffers += f"{arg.input_var}_clbuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, {arg.buffer_size}*sizeof(int), NULL, &err);\n\t" \
+                                  "if (err != CL_SUCCESS) {\n\t" \
+                                  '\tfprintf(stderr, "OpenCL Error: Failed to create buffer. %d\\n", err);\n\t' \
+                                  "\texit(EXIT_FAILURE);\n\t" \
+                                  "}\n\t"
+                write_to_buffers += f"err = clEnqueueWriteBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t" \
+                                    "if (err != CL_SUCCESS) {\n\t" \
+                                    '\tfprintf(stderr, "OpenCL Error: Failed to write to buffer. %d\\n", err);\n\t' \
+                                    "\texit(EXIT_FAILURE);\n\t" \
+                                    "}\n\t"
+                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), &{arg.input_var}_clbuffer);\n\t" \
+                                   "if (err != CL_SUCCESS) {\n\t" \
+                                   '\tfprintf(stderr, "OpenCL Error: Failed to set kernel argument. %d\\n", err);\n\t' \
+                                   "\texit(EXIT_FAILURE);\n\t" \
+                                   "}\n\t"
+                read_from_buffers += f"err = clEnqueueReadBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t" \
+                                     "if (err != CL_SUCCESS) {\n\t" \
+                                     '\tfprintf(stderr, "OpenCL Error: Failed to read from buffer. %d\\n", err);\n\t' \
+                                     "\texit(EXIT_FAILURE);\n\t" \
+                                     "}\n\t"
+                release_buffers += f"err = clReleaseMemObject({arg.input_var}_clbuffer);\n\t" \
+                                   "if (err != CL_SUCCESS) {\n\t" \
+                                   '\tfprintf(stderr, "OpenCL Error: Failed to release buffer. %d\\n", err);\n\t' \
+                                   "\texit(EXIT_FAILURE);\n\t" \
+                                   "}\n\t"
             elif arg.argument_type == ArgType.SCALAR:
-                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(int), &{arg.input_var});\n\t"
+                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(int), &{arg.input_var});\n\t" \
+                                   "if (err != CL_SUCCESS) {\n\t" \
+                                   '\tfprintf(stderr, "OpenCL Error: Failed to set kernel argument. %d\\n", err);\n\t' \
+                                   "\texit(EXIT_FAILURE);\n\t" \
+                                   "}\n\t"
             elif arg.argument_type == ArgType.CONSTANT:
                 var_name = f"CONSTANT{constant_index}"
                 constant_index += 1
                 assign_constants += f"int {var_name} = {arg.input_var};\n\t"
-                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(int), &{var_name});\n\t"
+                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(int), &{var_name});\n\t" \
+                                   "if (err != CL_SUCCESS) {\n\t" \
+                                   '\tfprintf(stderr, "OpenCL Error: Failed to set kernel argument. %d\\n", err);\n\t' \
+                                   "\texit(EXIT_FAILURE);\n\t" \
+                                   "}\n\t"
 
         output = output.replace('<GLOBAL DOMAIN SIZE>', self.global_domain_sz)
         output = output.replace('<SOURCE FILEPATH>', f'"{kernel_path}"')
+        output = output.replace('<KERNEL NAME>', f'"{self.kernel_name}"')
 
         output = output.replace('<ASSIGN CONSTANTS>', assign_constants)
         output = output.replace('<INPUT BUFFERS>', buffer_decls)
@@ -94,8 +138,8 @@ class HostDetails:
         output = output.replace('<READ FROM OUTPUT BUFFERS>', read_from_buffers)
         output = output.replace('<RELEASE BUFFERS>', release_buffers)
 
-        output = output.replace('<PRE KERNEL HOST CODE>', '')
-        output = output.replace('<POST KERNEL HOST CODE>', '')
+        output = output.replace('<PRE KERNEL HOST CODE>', self.pre_kernel_code)
+        output = output.replace('<POST KERNEL HOST CODE>', self.post_kernel_code)
 
         return output
 

@@ -25,6 +25,8 @@ int main() {
     <INPUT BUFFERS>
     <OUTPUT BUFFERS>
 
+    const char *kernel_name = <KERNEL NAME>;
+
     const char *filepath = <SOURCE FILEPATH>;
     FILE *source_file;
     size_t source_size;
@@ -103,7 +105,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
-    kernel = clCreateKernel(program, "translated_kernel", &err);
+    kernel = clCreateKernel(program, kernel_name, &err);
     if (!kernel || err != CL_SUCCESS)
     {
         fprintf(stderr,"OpenCL Error: Failed to create kernel: %d!\n", err);
