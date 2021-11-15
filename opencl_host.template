@@ -5,6 +5,8 @@
 #include <OpenCL/opencl.h>
 #endif
 
+#include <stdio.h>
+
 int main() {
     <PRE KERNEL HOST CODE>
 
@@ -73,7 +75,7 @@ int main() {
     source_size = ftell(source_file);
     rewind(source_file);
 
-    source_buffer = (char*)malloc(programSize + 1);
+    source_buffer = (char*)malloc(source_size + 1);
     source_buffer[source_size] = '\0';
     fread(source_buffer, sizeof(char), source_size, source_file);
     fclose(source_file);
