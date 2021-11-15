@@ -13,6 +13,8 @@ int main() {
     size_t global = <GLOBAL DOMAIN SIZE>;
     size_t local;
 
+    <ASSIGN CONSTANTS>
+
     cl_device_id device_id;
     cl_context context;
     cl_command_queue command_queue;
