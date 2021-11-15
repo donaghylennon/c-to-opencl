@@ -71,7 +71,7 @@ class HostDetails:
                 buffer_decls += f"cl_mem {arg.input_var}_clbuffer;\n\t"
                 create_buffers += f"{arg.input_var}_clbuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, {arg.buffer_size}*sizeof(int), NULL, &err);\n\t"
                 write_to_buffers += f"err = clEnqueueWriteBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t"
-                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), &{arg.input_var});\n\t"
+                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), &{arg.input_var}_clbuffer);\n\t"
                 read_from_buffers += f"err = clEnqueueReadBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t"
                 release_buffers += f"err = clReleaseMemObject({arg.input_var}_clbuffer);\n\t"
             elif arg.argument_type == ArgType.SCALAR:
