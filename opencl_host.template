@@ -41,6 +41,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
 
+    platforms = malloc(sizeof(cl_platform_id) * number_of_platforms);
     err = clGetPlatformIDs(number_of_platforms, platforms, NULL);
     if (err != CL_SUCCESS) {
         fprintf(stderr,"OpenCL Error: Failed to get platform IDs: %d!\n", err);
@@ -53,6 +54,7 @@ int main() {
         fprintf(stderr,"OpenCL Error: Failed to get device IDs: %d!\n", err);
         exit(EXIT_FAILURE);
     }
+    free(platforms);
 
     // Create context and command queue using chosen device
     context = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
