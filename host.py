@@ -53,7 +53,7 @@ class HostDetails:
 
         return HostDetails(global_domain_sz, buffers, kernel_args)
 
-    def generate_code(self):
+    def generate_code(self, kernel_path):
         assign_constants = ""
         buffer_decls = ""
         create_buffers = ""
@@ -65,8 +65,6 @@ class HostDetails:
 
         with open('opencl_host.template', 'r') as f:
             output = f.read()
-
-        output = output.replace('<GLOBAL DOMAIN SIZE>', self.global_domain_sz)
 
         for i, arg in enumerate(self.kernel_args):
             if arg.argument_type == ArgType.BUFFER:
@@ -83,6 +81,9 @@ class HostDetails:
                 constant_index += 1
                 assign_constants += f"int {var_name} = {arg.input_var};\n\t"
                 set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(int), &{var_name});\n\t"
+
+        output = output.replace('<GLOBAL DOMAIN SIZE>', self.global_domain_sz)
+        output = output.replace('<SOURCE FILEPATH>', f'"{kernel_path}"')
 
         output = output.replace('<ASSIGN CONSTANTS>', assign_constants)
         output = output.replace('<INPUT BUFFERS>', buffer_decls)

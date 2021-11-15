@@ -17,7 +17,7 @@ def main():
     with open(f'{args.kernel_file}', 'w') as f:
         f.write(cl_output)
     host_details = host.HostDetails.from_ast(ast)
-    host_code = host_details.generate_code()
+    host_code = host_details.generate_code(args.kernel_file)
     with open(f'{args.output_file}', 'w') as f:
         f.write(host_code)
 
