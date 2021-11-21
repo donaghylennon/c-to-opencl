@@ -84,22 +84,26 @@ class HostDetails:
         for i, arg in enumerate(self.kernel_args):
             if arg.argument_type == ArgType.BUFFER:
                 buffer_decls += f"cl_mem {arg.input_var}_clbuffer;\n\t"
-                create_buffers += f"{arg.input_var}_clbuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, {arg.buffer_size}*sizeof(int), NULL, &err);\n\t" \
+                create_buffers += f"{arg.input_var}_clbuffer = clCreateBuffer(context, CL_MEM_READ_WRITE, " \
+                                  f"{arg.buffer_size}*sizeof(int), NULL, &err);\n\t" \
                                   "if (err != CL_SUCCESS) {\n\t" \
                                   '\tfprintf(stderr, "OpenCL Error: Failed to create buffer. %d\\n", err);\n\t' \
                                   "\texit(EXIT_FAILURE);\n\t" \
                                   "}\n\t"
-                write_to_buffers += f"err = clEnqueueWriteBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t" \
+                write_to_buffers += f"err = clEnqueueWriteBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE," \
+                                    f" 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t" \
                                     "if (err != CL_SUCCESS) {\n\t" \
                                     '\tfprintf(stderr, "OpenCL Error: Failed to write to buffer. %d\\n", err);\n\t' \
                                     "\texit(EXIT_FAILURE);\n\t" \
                                     "}\n\t"
-                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), &{arg.input_var}_clbuffer);\n\t" \
+                set_kernel_args += f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), " \
+                                   f"&{arg.input_var}_clbuffer);\n\t" \
                                    "if (err != CL_SUCCESS) {\n\t" \
                                    '\tfprintf(stderr, "OpenCL Error: Failed to set kernel argument. %d\\n", err);\n\t' \
                                    "\texit(EXIT_FAILURE);\n\t" \
                                    "}\n\t"
-                read_from_buffers += f"err = clEnqueueReadBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, 0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t" \
+                read_from_buffers += f"err = clEnqueueReadBuffer(command_queue, {arg.input_var}_clbuffer, CL_TRUE, " \
+                                     f"0, {arg.buffer_size}*sizeof(int), {arg.input_var}, 0, NULL, NULL);\n\t" \
                                      "if (err != CL_SUCCESS) {\n\t" \
                                      '\tfprintf(stderr, "OpenCL Error: Failed to read from buffer. %d\\n", err);\n\t' \
                                      "\texit(EXIT_FAILURE);\n\t" \
@@ -131,7 +135,7 @@ class HostDetails:
 
         output = output.replace('<ASSIGN CONSTANTS>', assign_constants)
         output = output.replace('<INPUT BUFFERS>', buffer_decls)
-        output = output.replace('<OUTPUT BUFFERS>', '')      # Treat all buffers as both input/output for now
+        output = output.replace('<OUTPUT BUFFERS>', '')  # Treat all buffers as both input/output for now
         output = output.replace('<CREATE BUFFERS>', create_buffers)
         output = output.replace('<WRITE TO INPUT BUFFERS>', write_to_buffers)
         output = output.replace('<SET KERNEL ARGUMENTS>', set_kernel_args)
@@ -143,6 +147,7 @@ class HostDetails:
 
         return output
 
+
 class KernelArg:
     __slots__ = 'argument_type', 'input_var', 'buffer_size'
 
@@ -151,10 +156,12 @@ class KernelArg:
         self.input_var = input_var
         self.buffer_size = buffer_size
 
+
 class ArgType(Enum):
     BUFFER = auto()
     SCALAR = auto()
     CONSTANT = auto()
+
 
 # Unused, may be used later or removed
 class BufferDetails:
@@ -167,6 +174,7 @@ class BufferDetails:
         self.read_write = read_write
         self.input_var = input_var
         self.output_var = output_var
+
 
 def is_buffer(ast):
     # Assume if ast node is a pointer, it's a device buffer

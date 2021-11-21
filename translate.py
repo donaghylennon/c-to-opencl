@@ -1,5 +1,6 @@
 from pycparser import c_ast, c_generator
 
+
 def translate_function(ast, lvl_indent=0):
     output = ""
     whitespace = "    " * lvl_indent
@@ -10,7 +11,8 @@ def translate_function(ast, lvl_indent=0):
     output += whitespace + "__kernel " + func_type + " " + func_name + "("
 
     for i, param in enumerate(func_def.decl.type.args):
-        if i != 0: output += ", "
+        if i != 0:
+            output += ", "
         output += translate_declaration(param.type, lvl_indent+1) + " " + param.name
     output += ") {\n"
 
@@ -19,6 +21,7 @@ def translate_function(ast, lvl_indent=0):
     output += "}\n"
 
     return output
+
 
 def translate_declaration(node, lvl_indent=0):
     output = ""
@@ -29,6 +32,7 @@ def translate_declaration(node, lvl_indent=0):
     elif type(node) == c_ast.TypeDecl:
         output += " ".join(node.type.names)
     return output
+
 
 def translate_for(node, lvl_indent=0):
     output = ""
