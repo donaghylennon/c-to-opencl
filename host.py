@@ -13,8 +13,8 @@ class HostDetails:
         self.pre_kernel_code = pre_kernel_code
         self.post_kernel_code = post_kernel_code
 
-    @staticmethod
-    def from_ast(ast):
+    @classmethod
+    def from_ast(cls, ast):
         buffers = []
         kernel_args = []
         pre_kernel_code = ""
@@ -66,7 +66,7 @@ class HostDetails:
         # assume first buffer's size is domain size for now
         global_domain_sz = kernel_args[0].buffer_size
 
-        return HostDetails(global_domain_sz, buffers, kernel_args, func_name, pre_kernel_code, post_kernel_code)
+        return cls(global_domain_sz, buffers, kernel_args, func_name, pre_kernel_code, post_kernel_code)
 
     def generate_code(self, kernel_path):
         assign_constants = ""
