@@ -13,7 +13,8 @@ def main():
     args = argparser.parse_args()
 
     ast = pycparser.parse_file(args.input_file, use_cpp=True)
-    cl_output = translate.translate_function(ast)
+    visitor = translate.TranslationVisitor()
+    cl_output = visitor.visit(ast.ext[0])
     with open(args.kernel_file, 'w') as f:
         f.write(cl_output)
     host_details = host.HostDetails.from_ast(ast)
