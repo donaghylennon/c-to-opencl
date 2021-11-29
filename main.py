@@ -14,11 +14,11 @@ def main():
 
     ast = pycparser.parse_file(args.input_file, use_cpp=True)
     cl_output = translate.translate_function(ast)
-    with open(f'{args.kernel_file}', 'w') as f:
+    with open(args.kernel_file, 'w') as f:
         f.write(cl_output)
     host_details = host.HostDetails.from_ast(ast)
     host_code = host_details.generate_code(args.kernel_file)
-    with open(f'{args.output_file}', 'w') as f:
+    with open(args.output_file, 'w') as f:
         f.write(host_code)
 
 
