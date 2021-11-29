@@ -17,11 +17,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
         output += whitespace + "__kernel " + func_type + " " + func_name + "("
 
-        for i, param in enumerate(node.decl.type.args):
-            if i != 0:
-                output += ", "
-            output += self.visit(param.type) + " " + param.name
-        output += ") {\n"
+        output += ", ".join([
+            self.visit(param.type) + " " + param.name
+            for param in node.decl.type.args
+        ])
 
         for_loop = node.body.block_items[0]
         output += translate_for(for_loop, self.level_of_indentation+1)
