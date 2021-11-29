@@ -20,10 +20,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
         output += ", ".join([
             self.visit(param.type) + " " + param.name
             for param in node.decl.type.args
-        ])
+        ]) + ") {\n"
 
         for_loop = node.body.block_items[0]
-        output += translate_for(for_loop, self.level_of_indentation+1)
+        output += self.visit(for_loop)
         output += "}\n"
 
         return output
@@ -33,25 +33,27 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
     def visit_TypeDecl(self, node: c_ast.Node) -> str:
         return " ".join(node.type.names)
+    
+    def visit_For(self, node: c_ast.Node) -> str:
+        self.level_of_indentation += 1
+        output = ""
+        whitespace = "    " * self.level_of_indentation
+        indexes = []
+        for decl in node.init:
+            indexes.append(decl.name)
 
+        for i, index in enumerate(indexes):
+            output += whitespace + f"int {index} = get_global_id({i});\n"
 
-def translate_for(node, lvl_indent=0):
-    output = ""
-    whitespace = "    " * lvl_indent
-    indexes = []
-    for decl in node.init:
-        indexes.append(decl.name)
+        cond = node.cond
+        output += whitespace + "if(!("
+        output += cond.left.name + " " + cond.op + " " + cond.right.name + "))\n"
+        output += whitespace + "    " + "return;\n"
 
-    for i, index in enumerate(indexes):
-        output += whitespace + f"int {index} = get_global_id({i});\n"
+        generator = c_generator.CGenerator()
+        for stmt in node.stmt:
+            output += whitespace + generator.visit(stmt) + ";\n"
 
-    cond = node.cond
-    output += whitespace + "if(!("
-    output += cond.left.name + " " + cond.op + " " + cond.right.name + "))\n"
-    output += whitespace + "    " + "return;\n"
+        self.level_of_indentation -= 1
+        return output
 
-    generator = c_generator.CGenerator()
-    for stmt in node.stmt:
-        output += whitespace + generator.visit(stmt) + ";\n"
-
-    return output
