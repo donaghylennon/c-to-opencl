@@ -14,7 +14,7 @@ def main():
 
     ast = pycparser.parse_file(args.input_file, use_cpp=True)
     visitor = translate.TranslationVisitor()
-    cl_output = visitor.visit(ast.ext[0])
+    cl_output = visitor.visit(ast)
     with open(args.kernel_file, 'w') as f:
         f.write(cl_output)
     host_details = host.HostDetails.from_ast(ast)

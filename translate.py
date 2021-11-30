@@ -9,6 +9,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def __init__(self):
         pass
 
+    def visit_FileAST(self, node: c_ast.Node) -> str:
+        return self.visit(node.ext[0])
+
     def visit_FuncDef(self, node: c_ast.Node) -> str:
         output: str = ""
         whitespace: str = "    " * self.level_of_indentation
