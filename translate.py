@@ -32,10 +32,12 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return output
 
     def visit_PtrDecl(self, node: c_ast.Node) -> str:
-        return "__global " + self.visit(node.type) + "*"
+        qualifiers = " " + " ".join(node.quals) if node.quals else ""
+        return "__global " + self.visit(node.type) + "*" + qualifiers
 
     def visit_TypeDecl(self, node: c_ast.Node) -> str:
-        return " ".join(node.type.names)
+        qualifiers = " ".join(node.quals) + " " if node.quals else ""
+        return qualifiers + " ".join(node.type.names)
     
     def visit_For(self, node: c_ast.Node) -> str:
         self.level_of_indentation += 1
