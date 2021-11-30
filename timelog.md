@@ -82,3 +82,42 @@
 ### 8 Nov 2021
 
 * *3.5 hours* Continued working on code to generate host side boilerplate
+
+### 9 Nov 2021
+
+* *0.5 hours* Meeting with supervisor
+
+* *2.5 hours* Wrote classes to gather info required to generate host code from original code
+
+## Week 7
+
+### 15 Nov 2021
+
+* *6 hours* Wrote logic to handle parsing the ast for the information required to generate the host side
+  code, as well as the logic to fully generate that code, along with numerous fixes and edits to the template
+  file used for this
+
+### 16 Nov 2021
+
+* *0.5 hours* Meeting with supervisor
+
+## Week 8
+
+### 24 Nov 2021
+
+* *3 hours* Researched OpenMP and tested some minor example programs to familiarise myself with it
+
+### 27 Nov 2021
+
+* *3.5 hours* Read through a number of programs from the Rodinia suite in order to understand how more
+  advanced OpenCL and OpenMP are used
+
+## Week 9
+
+### 29 Nov 2021
+
+* *2 hours* Reseached the use of the visitor pattern for visiting abstract syntax trees
+
+* *6 hours* Restructure translation code into visitor pattern, and add some more features to translation
+  using this
+
