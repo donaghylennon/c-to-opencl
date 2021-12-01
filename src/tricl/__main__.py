@@ -6,7 +6,7 @@ from . import host
 
 
 def main():
-    argparser = argparse.ArgumentParser()
+    argparser = argparse.ArgumentParser(prog="tricl")
     argparser.add_argument('input_file', help='path to c file to translate')
     argparser.add_argument('output_file', help='path to write c file containing host code')
     argparser.add_argument('kernel_file', help='path to write cl file containing kernel code')
