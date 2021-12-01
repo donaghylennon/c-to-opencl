@@ -38,7 +38,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def visit_TypeDecl(self, node: c_ast.Node) -> str:
         qualifiers = " ".join(node.quals) + " " if node.quals else ""
         return qualifiers + " ".join(node.type.names)
-    
+
     def visit_For(self, node: c_ast.Node) -> str:
         self.level_of_indentation += 1
         output = ""
@@ -61,4 +61,3 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
         self.level_of_indentation -= 1
         return output
-
