@@ -1,1 +1,1 @@
-# c-to-opencl
+# TriCL
