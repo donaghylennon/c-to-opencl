@@ -121,3 +121,7 @@
 * *6 hours* Restructure translation code into visitor pattern, and add some more features to translation
   using this
 
+### 1 Dec 2021
+
+* *3 hours* Researched Python package structure and reorganised my project so it is installible via pip
+
