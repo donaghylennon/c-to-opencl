@@ -99,7 +99,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
             if type(node.stmt) == c_ast.Compound:
                 output += self.visit(node.stmt)
             else:
-                output += (self.level_of_indentation + 1) * "    " + self.visit(node.stmt)
+                output += (self.level_of_indentation + 1) * "    " + self.visit(node.stmt) + ";\n"
             output += whitespace + "}"
         return output
 
@@ -143,14 +143,14 @@ class TranslationVisitor(c_ast.NodeVisitor):
         if type(node.iftrue) == c_ast.Compound:
             output += self.visit(node.iftrue)
         else:
-            output += self.level_of_indentation * "    " + self.visit(node.iftrue)
+            output += self.level_of_indentation * "    " + self.visit(node.iftrue) + ";"
         if node.iffalse:
             if type(node.iffalse) == c_ast.If:
                 output += whitespace + "} else " + self.visit(node.iffalse)
             elif type(node.iffalse) == c_ast.Compound:
                 output += whitespace + "} else {\n" + self.visit(node.iffalse)
             else:
-                output += whitespace + "} else {\n" + whitespace + self.visit(node.iffalse)
+                output += whitespace + "} else {\n" + whitespace + self.visit(node.iffalse) + ";"
         self.level_of_indentation -= 1
         output += "\n" + whitespace + "}"
         return output
@@ -213,5 +213,5 @@ class Translator(c_ast.NodeVisitor):
             argtype_visitor.visit(self.var_types[param]) + " " + param
             for param in args
         ]) + ") {\n"
-        output += function_body + "\n}\n"
+        output += function_body + "}\n"
         self.kernels.append(output)
