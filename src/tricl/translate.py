@@ -125,7 +125,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
             return "get_global_size(0)"
         elif node.name.name == "omp_get_thread_num":
             return "get_global_id(0)"
-        return self.visit(node.name) + "(" + args + ")"
+        return node.name.name + "(" + args + ")"
 
     def visit_BinaryOp(self, node: c_ast.Node) -> str:
         return self.visit(node.left) + f" {node.op} " + self.visit(node.right)
