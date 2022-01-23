@@ -4,11 +4,13 @@ from pycparser import c_ast, c_generator
 class TranslationVisitor(c_ast.NodeVisitor):
     level_of_indentation: int = 0
     omp_mode: bool
+    omp_parallel_for: bool
     declared_in_omp: set = set()
     undeclared_in_omp: set = set()
 
-    def __init__(self, omp_mode: bool = False):
+    def __init__(self, omp_mode: bool = False, omp_parallel_for: bool = False):
         self.omp_mode = omp_mode
+        self.omp_parallel_for = omp_parallel_for
 
     def get_omp_kernel_args(self) -> set:
         return self.undeclared_in_omp
@@ -72,25 +74,30 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return qualifiers + " ".join(node.type.names)
 
     def visit_For(self, node: c_ast.Node) -> str:
-        if not self.omp_mode:
+        if self.omp_parallel_for or not self.omp_mode:
             self.level_of_indentation += 1
             output = ""
             whitespace = "    " * self.level_of_indentation
             indexes = []
             for decl in node.init:
+                if self.omp_mode:
+                    self.declared_in_omp.add(decl.name)
                 indexes.append(decl.name)
 
             for i, index in enumerate(indexes):
                 output += whitespace + f"int {index} = get_global_id({i});\n"
 
-            cond = node.cond
             output += whitespace + "if(!("
-            output += cond.left.name + " " + cond.op + " " + cond.right.name + "))\n"
+            cond = self.visit(node.cond)
+            output += cond + "))\n"
             output += whitespace + "    " + "return;\n"
 
-            generator = c_generator.CGenerator()
-            for stmt in node.stmt:
-                output += whitespace + generator.visit(stmt) + ";\n"
+            if type(node.stmt) == c_ast.Compound:
+                self.level_of_indentation -= 1
+                output += self.visit(node.stmt)
+                self.level_of_indentation += 1
+            else:
+                output += whitespace + self.visit(node.stmt) + ";\n"
 
             self.level_of_indentation -= 1
         else:
@@ -193,22 +200,29 @@ class Translator(c_ast.NodeVisitor):
 
     def visit_Compound(self, node: c_ast.Node):
         omp_parallel: bool = False
+        omp_parallel_for: bool = False
         for child in node:
             if omp_parallel:
                 self.extract_kernel_from_omp(child)
+                omp_parallel = False
+            elif omp_parallel_for:
+                self.extract_kernel_from_omp(child, True)
+                omp_parallel_for = False
             elif self.omp_mode and type(child) == c_ast.Pragma:
                 if child.string == "omp parallel":
                     omp_parallel = True
+                elif child.string == "omp parallel for":
+                    omp_parallel_for = True
             else:
                 self.visit(child)
 
-    def extract_kernel_from_omp(self, node: c_ast.Node):
+    def extract_kernel_from_omp(self, node: c_ast.Node, parallel_for: bool = False):
         # Need to visit this entire subtree, while keeping track of
         # declared + used variables -- used but not declared == kernel argument
         k_id = self.next_omp_kernel_id
         self.next_omp_kernel_id += 1
         output: str = f"__kernel void omp_translated_kernel{k_id}("
-        trans_visitor: TranslationVisitor = TranslationVisitor(omp_mode=True)
+        trans_visitor: TranslationVisitor = TranslationVisitor(omp_mode=True, omp_parallel_for=True)
         argtype_visitor: TranslationVisitor = TranslationVisitor()
         function_body = trans_visitor.visit(node)
         args = trans_visitor.get_omp_kernel_args()
