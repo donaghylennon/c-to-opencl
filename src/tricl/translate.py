@@ -13,6 +13,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def get_omp_kernel_args(self) -> set:
         return self.undeclared_in_omp
 
+    def generate_argument_type(self, node: c_ast.Node) -> str:
+        if type(node) is c_ast.PtrDecl or type(node) is c_ast.ArrayDecl:
+            return "__global " + self.visit(node)
+
     def visit_FileAST(self, node: c_ast.Node) -> str:
         return self.visit(node.ext[0])
 
@@ -25,7 +29,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         output += whitespace + "__kernel " + func_type + " " + func_name + "("
 
         output += ", ".join([
-            self.visit(param.type) + " " + param.name
+            self.generate_argument_type(param.type) + " " + param.name
             for param in node.decl.type.args
         ]) + ") "
 
@@ -58,10 +62,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
     def visit_PtrDecl(self, node: c_ast.Node) -> str:
         qualifiers = " " + " ".join(node.quals) if node.quals else ""
-        return "__global " + self.visit(node.type) + "*" + qualifiers
+        return self.visit(node.type) + "*" + qualifiers
 
     def visit_ArrayDecl(self, node: c_ast.Node) -> str:
-        return "__global " + self.visit(node.type) + "*"
+        return self.visit(node.type) + "*"
 
     def visit_TypeDecl(self, node: c_ast.Node) -> str:
         qualifiers = " ".join(node.quals) + " " if node.quals else ""
@@ -210,7 +214,7 @@ class Translator(c_ast.NodeVisitor):
         args = trans_visitor.get_omp_kernel_args()
 
         output += ", ".join([
-            argtype_visitor.visit(self.var_types[param]) + " " + param
+            argtype_visitor.generate_argument_type(self.var_types[param]) + " " + param
             for param in args
         ]) + ") {\n"
         output += function_body + "}\n"
