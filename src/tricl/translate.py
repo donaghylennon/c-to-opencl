@@ -43,6 +43,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         if type(node) is c_ast.PtrDecl or type(node) is c_ast.ArrayDecl:
             return "__global " + self.visit(node)
+        else:
+            return self.visit(node)
 
     def visit_FuncDef(self, node: c_ast.Node) -> str:
         output: str = ""
@@ -197,17 +199,17 @@ class Translator(c_ast.NodeVisitor):
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
 
-    def visit_FileAST(self, node: c_ast.Node):
+    def visit_FileAST(self, node: c_ast.Node) -> str:
         for child in node:
             self.visit(child)
         return self.kernels[0]
 
-    def visit_Decl(self, node: c_ast.Node):
+    def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
         for child in node:
             self.visit(child)
 
-    def visit_Compound(self, node: c_ast.Node):
+    def visit_Compound(self, node: c_ast.Node) -> None:
         omp_parallel: bool = False
         omp_parallel_for: bool = False
         for child in node:
@@ -225,7 +227,7 @@ class Translator(c_ast.NodeVisitor):
             else:
                 self.visit(child)
 
-    def extract_kernel_from_omp(self, node: c_ast.Node, parallel_for: bool = False):
+    def extract_kernel_from_omp(self, node: c_ast.Node, parallel_for: bool = False) -> None:
         # Need to visit this entire subtree, while keeping track of
         # declared + used variables -- used but not declared == kernel argument
         k_id = self.next_omp_kernel_id
