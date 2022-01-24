@@ -7,14 +7,13 @@ from . import host
 
 def main():
     argparser = argparse.ArgumentParser(prog="tricl")
-    argparser.add_argument('--omp', help='translate OpenMP to OpenCL', action='store_true')
     argparser.add_argument('input_file', help='path to c file to translate')
     argparser.add_argument('output_file', help='path to write c file containing host code')
     argparser.add_argument('kernel_file', help='path to write cl file containing kernel code')
     args = argparser.parse_args()
 
     ast = pycparser.parse_file(args.input_file, use_cpp=True)
-    visitor = translate.Translator(omp_mode=args.omp)
+    visitor = translate.Translator()
     cl_output = visitor.visit(ast)
     with open(args.kernel_file, 'w') as f:
         f.write(cl_output)

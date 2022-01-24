@@ -1,4 +1,4 @@
-from pycparser import c_ast, c_generator
+from pycparser import c_ast
 
 
 class TranslationVisitor(c_ast.NodeVisitor):
@@ -44,9 +44,6 @@ class TranslationVisitor(c_ast.NodeVisitor):
         if type(node) is c_ast.PtrDecl or type(node) is c_ast.ArrayDecl:
             return "__global " + self.visit(node)
 
-    def visit_FileAST(self, node: c_ast.Node) -> str:
-        return self.visit(node.ext[0])
-
     def visit_FuncDef(self, node: c_ast.Node) -> str:
         output: str = ""
         whitespace: str = "    " * self.level_of_indentation
@@ -60,15 +57,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
             for param in node.decl.type.args
         ]) + ") "
 
-        if not self.omp_mode:
-            output += "{\n"
-            for_loop = node.body.block_items[0]
-            output += self.visit(for_loop)
-            output += "}\n"
-        else:
-            self.level_of_indentation += 1
-            output += self.visit(node.body)
-            self.level_of_indentation -= 1
+        self.level_of_indentation += 1
+        output += self.visit(node.body)
+        self.level_of_indentation -= 1
 
         return output
 
@@ -99,7 +90,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return qualifiers + " ".join(node.type.names)
 
     def visit_For(self, node: c_ast.Node) -> str:
-        if self.omp_parallel_for or not self.omp_mode:
+        if self.omp_parallel_for:
             self.level_of_indentation += 1
             output = ""
             whitespace = "    " * self.level_of_indentation
@@ -202,21 +193,14 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
 
 class Translator(c_ast.NodeVisitor):
-    omp_mode: bool
     var_types: dict = {}
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
 
-    def __init__(self, omp_mode: bool = False):
-        self.omp_mode = omp_mode
-
     def visit_FileAST(self, node: c_ast.Node):
-        if self.omp_mode:
-            for child in node:
-                self.visit(child)
-            return self.kernels[0]
-        else:
-            return TranslationVisitor().visit(node)
+        for child in node:
+            self.visit(child)
+        return self.kernels[0]
 
     def visit_Decl(self, node: c_ast.Node):
         self.var_types[node.name] = node.type
@@ -233,7 +217,7 @@ class Translator(c_ast.NodeVisitor):
             elif omp_parallel_for:
                 self.extract_kernel_from_omp(child, True)
                 omp_parallel_for = False
-            elif self.omp_mode and type(child) == c_ast.Pragma:
+            elif type(child) == c_ast.Pragma:
                 if child.string == "omp parallel":
                     omp_parallel = True
                 elif child.string == "omp parallel for":
