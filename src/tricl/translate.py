@@ -1,3 +1,4 @@
+from typing import Optional
 from pycparser import c_ast
 
 
@@ -7,6 +8,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
     omp_parallel_for: bool
     declared_in_omp: set
     undeclared_in_omp: set
+    function_calls: set
 
     def translate_omp_parallel(self, node: c_ast.Node) -> str:
         self.omp_mode = True
@@ -14,6 +16,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
+        self.function_calls = set()
         return self.visit(node)
 
     def translate_omp_parallel_for(self, node: c_ast.Node) -> str:
@@ -22,6 +25,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
+        self.function_calls = set()
         return self.visit(node)
 
     def translate_function(self, node: c_ast.Node) -> str:
@@ -30,10 +34,14 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
+        self.function_calls = set()
         return self.visit(node)
 
     def get_omp_kernel_args(self) -> set:
         return self.undeclared_in_omp
+
+    def get_function_calls(self) -> set:
+        return self.function_calls
 
     def generate_argument_type(self, node: c_ast.Node) -> str:
         self.omp_mode = False
@@ -41,6 +49,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
+        self.function_calls = set()
         if type(node) is c_ast.PtrDecl or type(node) is c_ast.ArrayDecl:
             return "__global " + self.visit(node)
         else:
@@ -52,16 +61,19 @@ class TranslationVisitor(c_ast.NodeVisitor):
         func_name: str = node.decl.name
         func_type: str = node.decl.type.type.type.names[0]
 
-        output += whitespace + "__kernel " + func_type + " " + func_name + "("
+        output += whitespace + func_type + " " + func_name + "("
 
         output += ", ".join([
             self.generate_argument_type(param.type) + " " + param.name
             for param in node.decl.type.args
-        ]) + ") "
+        ]) + ") {\n"
 
-        self.level_of_indentation += 1
-        output += self.visit(node.body)
-        self.level_of_indentation -= 1
+        if type(node.body) is c_ast.Compound:
+            output += self.visit(node.body)
+        else:
+            output += (self.level_of_indentation + 1) * "    " + self.visit(node.body)
+
+        output += whitespace + "}\n"
 
         return output
 
@@ -149,11 +161,13 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return output
 
     def visit_FuncCall(self, node: c_ast.Node) -> str:
-        args = ",".join([self.visit(arg) for arg in node.args]) if node.args else ""
+        args = ", ".join([self.visit(arg) for arg in node.args]) if node.args else ""
         if node.name.name == "omp_get_num_threads":
             return "get_global_size(0)"
         elif node.name.name == "omp_get_thread_num":
             return "get_global_id(0)"
+        else:
+            self.function_calls.add(node.name.name)
         return node.name.name + "(" + args + ")"
 
     def visit_BinaryOp(self, node: c_ast.Node) -> str:
@@ -193,16 +207,24 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def visit_DeclList(self, node: c_ast.Node) -> str:
         return ", ".join([self.visit(child) for child in node])
 
+    def visit_Return(self, node: c_ast.Node) -> str:
+        if node.expr is not None:
+            return "return " + self.visit(node.expr)
+        else:
+            return "return"
+
 
 class Translator(c_ast.NodeVisitor):
     var_types: dict = {}
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
+    file_ast: c_ast.Node
 
     def visit_FileAST(self, node: c_ast.Node) -> str:
+        self.file_ast = node
         for child in node:
             self.visit(child)
-        return self.kernels[0]
+        return "\n".join(self.kernels)
 
     def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
@@ -240,6 +262,7 @@ class Translator(c_ast.NodeVisitor):
         else:
             function_body = trans_visitor.translate_omp_parallel(node)
         args = trans_visitor.get_omp_kernel_args()
+        function_calls = trans_visitor.get_function_calls()
 
         output += ", ".join([
             trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
@@ -247,3 +270,18 @@ class Translator(c_ast.NodeVisitor):
         ]) + ") {\n"
         output += function_body + "}\n"
         self.kernels.append(output)
+
+        while function_calls:
+            new_calls = []
+            for call in function_calls:
+                function_def = self.find_function_def(call)
+                if function_def is not None:
+                    self.kernels.append(trans_visitor.translate_function(function_def))
+                    new_calls.extend(trans_visitor.get_function_calls())
+            function_calls = new_calls
+        print(self.kernels)
+
+    def find_function_def(self, name: str) -> Optional[c_ast.Node]:
+        for child in self.file_ast:
+            if type(child) is c_ast.FuncDef and child.decl.name == name:
+                return child
