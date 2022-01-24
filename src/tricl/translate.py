@@ -2,20 +2,45 @@ from pycparser import c_ast, c_generator
 
 
 class TranslationVisitor(c_ast.NodeVisitor):
-    level_of_indentation: int = 0
+    level_of_indentation: int
     omp_mode: bool
     omp_parallel_for: bool
-    declared_in_omp: set = set()
-    undeclared_in_omp: set = set()
+    declared_in_omp: set
+    undeclared_in_omp: set
 
-    def __init__(self, omp_mode: bool = False, omp_parallel_for: bool = False):
-        self.omp_mode = omp_mode
-        self.omp_parallel_for = omp_parallel_for
+    def translate_omp_parallel(self, node: c_ast.Node) -> str:
+        self.omp_mode = True
+        self.omp_parallel_for = False
+        self.level_of_indentation = 0
+        self.declared_in_omp = set()
+        self.undeclared_in_omp = set()
+        return self.visit(node)
+
+    def translate_omp_parallel_for(self, node: c_ast.Node) -> str:
+        self.omp_mode = True
+        self.omp_parallel_for = True
+        self.level_of_indentation = 0
+        self.declared_in_omp = set()
+        self.undeclared_in_omp = set()
+        return self.visit(node)
+
+    def translate_function(self, node: c_ast.Node) -> str:
+        self.omp_mode = False
+        self.omp_parallel_for = False
+        self.level_of_indentation = 0
+        self.declared_in_omp = set()
+        self.undeclared_in_omp = set()
+        return self.visit(node)
 
     def get_omp_kernel_args(self) -> set:
         return self.undeclared_in_omp
 
     def generate_argument_type(self, node: c_ast.Node) -> str:
+        self.omp_mode = False
+        self.omp_parallel_for = False
+        self.level_of_indentation = 0
+        self.declared_in_omp = set()
+        self.undeclared_in_omp = set()
         if type(node) is c_ast.PtrDecl or type(node) is c_ast.ArrayDecl:
             return "__global " + self.visit(node)
 
@@ -222,13 +247,16 @@ class Translator(c_ast.NodeVisitor):
         k_id = self.next_omp_kernel_id
         self.next_omp_kernel_id += 1
         output: str = f"__kernel void omp_translated_kernel{k_id}("
-        trans_visitor: TranslationVisitor = TranslationVisitor(omp_mode=True, omp_parallel_for=True)
-        argtype_visitor: TranslationVisitor = TranslationVisitor()
-        function_body = trans_visitor.visit(node)
+        trans_visitor: TranslationVisitor = TranslationVisitor()
+
+        if parallel_for:
+            function_body = trans_visitor.translate_omp_parallel_for(node)
+        else:
+            function_body = trans_visitor.translate_omp_parallel(node)
         args = trans_visitor.get_omp_kernel_args()
 
         output += ", ".join([
-            argtype_visitor.generate_argument_type(self.var_types[param]) + " " + param
+            trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
             for param in args
         ]) + ") {\n"
         output += function_body + "}\n"
