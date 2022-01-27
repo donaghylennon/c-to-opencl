@@ -78,14 +78,14 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return output
 
     def visit_Decl(self, node: c_ast.Node) -> str:
-        output: str = "    " * self.level_of_indentation
-        if self.omp_mode:
+        if self.omp_mode and node.name:
             self.declared_in_omp.add(node.name)
         funcspec = " " + " ".join(node.funcspec) if node.funcspec else ""
         storage = " " + " ".join(node.storage) if node.storage else ""
         qualifiers = " " + " ".join(node.quals) if node.quals else ""
         init = " = " + self.visit(node.init) if node.init else ""
-        return funcspec + storage + qualifiers + self.visit(node.type) + " " + node.name + init
+        name = " " + node.name if node.name else ""
+        return funcspec + storage + qualifiers + self.visit(node.type) + name + init
 
     def visit_ID(self, node: c_ast.Node) -> str:
         if self.omp_mode and node.name not in self.declared_in_omp:
@@ -101,7 +101,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
     def visit_TypeDecl(self, node: c_ast.Node) -> str:
         qualifiers = " ".join(node.quals) + " " if node.quals else ""
-        return qualifiers + " ".join(node.type.names)
+        return qualifiers + self.visit(node.type)
+
+    def visit_IdentifierType(self, node: c_ast.Node):
+        return " ".join(node.names)
 
     def visit_For(self, node: c_ast.Node) -> str:
         if self.omp_parallel_for:
@@ -221,6 +224,23 @@ class TranslationVisitor(c_ast.NodeVisitor):
             return "return " + self.visit(node.expr)
         else:
             return "return"
+
+    def visit_StructRef(self, node: c_ast.Node) -> str:
+        return self.visit(node.name) + node.type + node.field.name
+
+    def visit_Struct(self, node: c_ast.Node) -> str:
+        self.level_of_indentation += 1
+        whitespace = "    " * self.level_of_indentation
+        output = "struct " + node.name + " {\n"
+        for decl in node.decls:
+            output += whitespace + self.visit(decl) + ";\n"
+        self.level_of_indentation -= 1
+        whitespace = "    " * self.level_of_indentation
+        output += whitespace + "}"
+        return output
+
+    def visit_InitList(self, node: c_ast.Node) -> str:
+        return "{ " + ", ".join([self.visit(expr) for expr in node.exprs]) + " }"
 
 
 class Translator(c_ast.NodeVisitor):
