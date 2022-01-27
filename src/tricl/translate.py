@@ -112,6 +112,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
             if type(node.init) is c_ast.Assignment:
                 indexes.append(node.init.lvalue.name)
+                self.declared_in_omp.add(node.init.lvalue.name)
             elif type(node.init) is c_ast.Decl:
                 if self.omp_mode:
                     self.declared_in_omp.add(node.init.name)
