@@ -301,14 +301,13 @@ class Translator(c_ast.NodeVisitor):
         self.kernels.append(output)
 
         while function_calls:
-            new_calls = []
+            new_calls = set()
             for call in function_calls:
                 function_def = self.find_function_def(call)
                 if function_def is not None:
                     self.kernels.append(trans_visitor.translate_function(function_def))
-                    new_calls.extend(trans_visitor.get_function_calls())
+                    new_calls.update(trans_visitor.get_function_calls())
             function_calls = new_calls
-        print(self.kernels)
 
     def find_function_def(self, name: str) -> Optional[c_ast.Node]:
         for child in self.file_ast:
