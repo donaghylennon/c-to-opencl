@@ -109,10 +109,18 @@ class TranslationVisitor(c_ast.NodeVisitor):
             output = ""
             whitespace = "    " * self.level_of_indentation
             indexes = []
-            for decl in node.init:
+
+            if type(node.init) is c_ast.Assignment:
+                indexes.append(node.init.lvalue.name)
+            elif type(node.init) is c_ast.Decl:
                 if self.omp_mode:
-                    self.declared_in_omp.add(decl.name)
-                indexes.append(decl.name)
+                    self.declared_in_omp.add(node.init.name)
+                indexes.append(node.init.name)
+            elif type(node.init) is c_ast.DeclList:
+                for init in node.init:
+                    if self.omp_mode:
+                        self.declared_in_omp.add(init.name)
+                    indexes.append(init.name)
 
             for i, index in enumerate(indexes):
                 output += whitespace + f"int {index} = get_global_id({i});\n"
