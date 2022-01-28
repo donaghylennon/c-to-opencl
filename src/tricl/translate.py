@@ -103,6 +103,11 @@ class TranslationVisitor(c_ast.NodeVisitor):
         qualifiers = " ".join(node.quals) + " " if node.quals else ""
         return qualifiers + self.visit(node.type)
 
+    def visit_Typename(self, node: c_ast.Node) -> str:
+        qualifiers = " ".join(node.quals) + " " if node.quals else ""
+        name = " " + node.name if node.name else ""
+        return qualifiers + self.visit(node.type) + name
+
     def visit_IdentifierType(self, node: c_ast.Node):
         return " ".join(node.names)
 
@@ -178,6 +183,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
             return "get_global_size(0)"
         elif node.name.name == "omp_get_thread_num":
             return "get_global_id(0)"
+        elif node.name.name == "sqrt":
+            pass
         else:
             self.function_calls.add(node.name.name)
         return node.name.name + "(" + args + ")"
@@ -186,7 +193,13 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return self.visit(node.left) + f" {node.op} " + self.visit(node.right)
 
     def visit_UnaryOp(self, node: c_ast.Node) -> str:
-        return node.op.replace("p", self.visit(node.expr))
+        op = node.op
+        if op == "sizeof":
+            return op + "(" + self.visit(node.expr) + ")"
+        elif op[0] == "p":
+            return node.op.replace("p", self.visit(node.expr))
+        else:
+            return node.op + self.visit(node.expr)
 
     def visit_Constant(self, node: c_ast.Node) -> str:
         return node.value
@@ -241,6 +254,12 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
     def visit_InitList(self, node: c_ast.Node) -> str:
         return "{ " + ", ".join([self.visit(expr) for expr in node.exprs]) + " }"
+
+    def visit_ExprList(self, node: c_ast.Node) -> str:
+        return ", ".join([self.visit(expr) for expr in node.exprs])
+
+    def visit_Cast(self, node: c_ast.Node) -> str:
+        return "(" + self.visit(node.to_type) + ")" + self.visit(node.expr)
 
 
 class Translator(c_ast.NodeVisitor):
