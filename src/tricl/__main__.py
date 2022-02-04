@@ -13,8 +13,9 @@ def main():
     argparser.add_argument('kernel_file', help='path to write cl file containing kernel code')
     args = argparser.parse_args()
 
-    cpp_args = ["-Iutils/fake_libc_include"] + ["-I" + path for path in args.I]
-    print(cpp_args)
+    cpp_args = ["-Iutils/fake_libc_include"]
+    if args.I:
+        cpp_args += ["-I" + path for path in args.I]
 
     ast = pycparser.parse_file(args.input_file, use_cpp=True, cpp_args=cpp_args)
     visitor = translate.Translator()
