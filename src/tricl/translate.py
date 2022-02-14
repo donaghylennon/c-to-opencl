@@ -6,35 +6,43 @@ class TranslationVisitor(c_ast.NodeVisitor):
     level_of_indentation: int
     omp_mode: bool
     omp_parallel_for: bool
+    expand_structs: bool
     declared_in_omp: set
     undeclared_in_omp: set
     function_calls: set
+    structs: set
 
     def translate_omp_parallel(self, node: c_ast.Node) -> str:
         self.omp_mode = True
         self.omp_parallel_for = False
+        self.expand_structs = False
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
         self.function_calls = set()
+        self.structs = set()
         return self.visit(node)
 
     def translate_omp_parallel_for(self, node: c_ast.Node) -> str:
         self.omp_mode = True
         self.omp_parallel_for = True
+        self.expand_structs = False
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
         self.function_calls = set()
+        self.structs = set()
         return self.visit(node)
 
     def translate_function(self, node: c_ast.Node) -> str:
         self.omp_mode = False
         self.omp_parallel_for = False
+        self.expand_structs = False
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
         self.function_calls = set()
+        self.structs = set()
         return self.visit(node)
 
     def get_omp_kernel_args(self) -> set:
@@ -43,13 +51,22 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def get_function_calls(self) -> set:
         return self.function_calls
 
-    def generate_argument_type(self, node: c_ast.Node) -> str:
+
+    def get_structs(self) -> set:
+        return self.structs
+
+    def generate_struct_def(self, node: c_ast.Node) -> str:
         self.omp_mode = False
         self.omp_parallel_for = False
         self.level_of_indentation = 0
         self.declared_in_omp = set()
         self.undeclared_in_omp = set()
         self.function_calls = set()
+        self.structs = set()
+        self.expand_structs = True
+        return self.visit(node)
+
+    def generate_argument_type(self, node: c_ast.Node) -> str:
         if type(node) is c_ast.PtrDecl or type(node) is c_ast.ArrayDecl:
             return "__global " + self.visit(node)
         else:
@@ -242,14 +259,18 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return self.visit(node.name) + node.type + node.field.name
 
     def visit_Struct(self, node: c_ast.Node) -> str:
-        self.level_of_indentation += 1
-        whitespace = "    " * self.level_of_indentation
-        output = "struct " + node.name + " {\n"
-        for decl in node.decls:
-            output += whitespace + self.visit(decl) + ";\n"
-        self.level_of_indentation -= 1
-        whitespace = "    " * self.level_of_indentation
-        output += whitespace + "}"
+        if node.decls:
+            self.structs.add(node)
+        output = "struct " + node.name
+        if self.expand_structs:
+            output += " {\n"
+            self.level_of_indentation += 1
+            whitespace = "    " * self.level_of_indentation
+            for decl in node.decls:
+                output += whitespace + self.visit(decl) + ";\n"
+            self.level_of_indentation -= 1
+            whitespace = "    " * self.level_of_indentation
+            output += whitespace + "}"
         return output
 
     def visit_InitList(self, node: c_ast.Node) -> str:
@@ -266,13 +287,14 @@ class Translator(c_ast.NodeVisitor):
     var_types: dict = {}
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
+    structs: list[str] = []
     file_ast: c_ast.Node
 
     def visit_FileAST(self, node: c_ast.Node) -> str:
         self.file_ast = node
         for child in node:
             self.visit(child)
-        return "\n".join(self.kernels)
+        return ("\n".join(self.structs) + "\n\n" if self.structs else "") + "\n".join(self.kernels)
 
     def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
@@ -311,6 +333,7 @@ class Translator(c_ast.NodeVisitor):
             function_body = trans_visitor.translate_omp_parallel(node)
         args = trans_visitor.get_omp_kernel_args()
         function_calls = trans_visitor.get_function_calls()
+        structs = trans_visitor.get_structs()
 
         output += ", ".join([
             trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
@@ -327,6 +350,9 @@ class Translator(c_ast.NodeVisitor):
                     self.kernels.append(trans_visitor.translate_function(function_def))
                     new_calls.update(trans_visitor.get_function_calls())
             function_calls = new_calls
+
+        for struct in structs:
+            self.structs.append(trans_visitor.generate_struct_def(struct))
 
     def find_function_def(self, name: str) -> Optional[c_ast.Node]:
         for child in self.file_ast:
