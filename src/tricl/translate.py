@@ -51,7 +51,6 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def get_function_calls(self) -> set:
         return self.function_calls
 
-
     def get_structs(self) -> set:
         return self.structs
 
@@ -64,6 +63,17 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.function_calls = set()
         self.structs = set()
         self.expand_structs = True
+        return self.visit(node)
+
+    def generate_typedefs(self, node: c_ast.Node) -> str:
+        self.omp_mode = False
+        self.omp_parallel_for = False
+        self.level_of_indentation = 0
+        self.declared_in_omp = set()
+        self.undeclared_in_omp = set()
+        self.function_calls = set()
+        self.structs = set()
+        self.expand_structs = False
         return self.visit(node)
 
     def generate_argument_type(self, node: c_ast.Node) -> str:
@@ -119,6 +129,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def visit_TypeDecl(self, node: c_ast.Node) -> str:
         qualifiers = " ".join(node.quals) + " " if node.quals else ""
         return qualifiers + self.visit(node.type)
+
+    def visit_Typedef(self, node: c_ast.Node) -> str:
+        return "typedef " + self.visit(node.type) + " " + node.name
 
     def visit_Typename(self, node: c_ast.Node) -> str:
         qualifiers = " ".join(node.quals) + " " if node.quals else ""
@@ -285,19 +298,35 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
 class Translator(c_ast.NodeVisitor):
     var_types: dict = {}
+    struct_defs: dict[str, c_ast.Node] = {}
+    typedef_defs: dict[str, c_ast.Node] = {}
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
     structs: list[str] = []
+    typedefs: list[str] = []
     file_ast: c_ast.Node
 
     def visit_FileAST(self, node: c_ast.Node) -> str:
         self.file_ast = node
         for child in node:
             self.visit(child)
-        return ("\n".join(self.structs) + "\n\n" if self.structs else "") + "\n".join(self.kernels)
+        return (";\n".join(self.structs) + ";\n\n" if self.structs else "") + \
+               (";\n".join(self.typedefs) + ";\n\n" if self.typedefs else "") + \
+               "\n".join(self.kernels)
 
     def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
+        for child in node:
+            self.visit(child)
+
+    def visit_Typedef(self, node: c_ast.Node) -> None:
+        self.typedef_defs[node.name] = node
+        for child in node:
+            self.visit(child)
+
+    def visit_Struct(self, node: c_ast.Node) -> None:
+        if node.decls:
+            self.struct_defs[node.name] = node
         for child in node:
             self.visit(child)
 
@@ -335,6 +364,15 @@ class Translator(c_ast.NodeVisitor):
         function_calls = trans_visitor.get_function_calls()
         structs = trans_visitor.get_structs()
 
+        structs_needed = set()
+        typedefs_needed = set()
+        for param in args:
+            tp = self.var_types[param]
+            if type(tp.type) is c_ast.Struct:
+                structs_needed.add(tp.type.name)
+            elif type(tp.type) is c_ast.IdentifierType:
+                typedefs_needed.add(tp.type.names[0])
+
         output += ", ".join([
             trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
             for param in args
@@ -351,8 +389,16 @@ class Translator(c_ast.NodeVisitor):
                     new_calls.update(trans_visitor.get_function_calls())
             function_calls = new_calls
 
-        for struct in structs:
-            self.structs.append(trans_visitor.generate_struct_def(struct))
+        for td in typedefs_needed:
+            td_def = self.typedef_defs[td]
+            code = trans_visitor.generate_typedefs(td_def)
+            self.typedefs.append(code)
+            if type(td_def.type) is c_ast.TypeDecl and type(td_def.type.type) is c_ast.Struct:
+                structs_needed.add(td_def.type.type.name)
+
+        for struct in structs_needed:
+            code = trans_visitor.generate_struct_def(self.struct_defs[struct])
+            self.structs.append(code)
 
     def find_function_def(self, name: str) -> Optional[c_ast.Node]:
         for child in self.file_ast:
