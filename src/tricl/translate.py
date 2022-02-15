@@ -73,7 +73,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         self.function_calls = set()
         self.structs = set()
-        self.expand_structs = False
+        self.expand_structs = True
         return self.visit(node)
 
     def generate_argument_type(self, node: c_ast.Node) -> str:
@@ -274,9 +274,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def visit_Struct(self, node: c_ast.Node) -> str:
         if node.decls:
             self.structs.add(node)
-        output = "struct " + node.name
+        output = "struct " + (node.name + " " if node.name else "")
         if self.expand_structs:
-            output += " {\n"
+            output += "{\n"
             self.level_of_indentation += 1
             whitespace = "    " * self.level_of_indentation
             for decl in node.decls:
@@ -310,8 +310,8 @@ class Translator(c_ast.NodeVisitor):
         self.file_ast = node
         for child in node:
             self.visit(child)
-        return (";\n".join(self.structs) + ";\n\n" if self.structs else "") + \
-               (";\n".join(self.typedefs) + ";\n\n" if self.typedefs else "") + \
+        return (";\n\n".join(self.structs) + ";\n\n" if self.structs else "") + \
+               (";\n\n".join(self.typedefs) + ";\n\n" if self.typedefs else "") + \
                "\n".join(self.kernels)
 
     def visit_Decl(self, node: c_ast.Node) -> None:
@@ -371,9 +371,20 @@ class Translator(c_ast.NodeVisitor):
             while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
                 tp = tp.type
             if type(tp.type) is c_ast.Struct:
+                s, t = self.get_needed_structs(tp.type.name)
+                structs_needed.update(s)
+                typedefs_needed.update(t)
                 structs_needed.add(tp.type.name)
             elif type(tp.type) is c_ast.IdentifierType:
-                typedefs_needed.add(tp.type.names[0])
+                if tp.type.names[0] not in ["signed", "unsigned", "int", "long", "float", "double", "char",
+                                            "short"]:
+                    typedefs_needed.add(tp.type.names[0])
+                    td_def = self.typedef_defs[tp.type.names[0]]
+                    if type(td_def.type) is c_ast.TypeDecl and type(td_def.type.type) is c_ast.Struct:
+                        s, t = self.get_needed_structs(td_def.type.type.name)
+                        structs_needed.update(s)
+                        typedefs_needed.update(t)
+                        structs_needed.add(td_def.type.type.name)
 
         output += ", ".join([
             trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
@@ -395,8 +406,6 @@ class Translator(c_ast.NodeVisitor):
             td_def = self.typedef_defs[td]
             code = trans_visitor.generate_typedefs(td_def)
             self.typedefs.append(code)
-            if type(td_def.type) is c_ast.TypeDecl and type(td_def.type.type) is c_ast.Struct:
-                structs_needed.add(td_def.type.type.name)
 
         for struct in structs_needed:
             code = trans_visitor.generate_struct_def(self.struct_defs[struct])
@@ -406,3 +415,51 @@ class Translator(c_ast.NodeVisitor):
         for child in self.file_ast:
             if type(child) is c_ast.FuncDef and child.decl.name == name:
                 return child
+
+    def get_needed_structs(self, struct: str) -> (set[str], set[str]):
+        structs = []
+        typedefs = []
+        to_check = []
+        struct_def = self.struct_defs[struct]
+        for decl in struct_def.decls:
+            tp = decl.type
+            while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
+                tp = tp.type
+            if type(tp) is c_ast.TypeDecl:
+                if type(tp.type) is c_ast.Struct:
+                    to_check.append((0, tp.type.name))
+                if type(tp.type) is c_ast.IdentifierType:
+                    if tp.type.names[0] not in ["signed", "unsigned", "int", "long", "float", "double", "char",
+                                                "short"]:
+                        to_check.append((1, tp.type.names[0]))
+        i = 0
+        while i < len(to_check):
+            s_or_td, name = to_check[i]
+            if s_or_td == 0:
+                structs.append(name)
+                struct_def = self.struct_defs[name]
+                for decl in struct_def.decls:
+                    tp = decl.type
+                    while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
+                        tp = tp.type
+                    if type(tp) is c_ast.TypeDecl:
+                        if type(tp.type) is c_ast.Struct:
+                            item_to_check = (0, tp.type.name)
+                            if item_to_check not in to_check:
+                                to_check.append(item_to_check)
+                        if type(tp.type) is c_ast.IdentifierType:
+                            if tp.type.names[0] not in ["signed", "unsigned", "int", "long", "float", "double", "char",
+                                                        "short"]:
+                                item_to_check = (1, tp.type.names[0])
+                                if item_to_check not in to_check:
+                                    to_check.append(item_to_check)
+            else:
+                typedefs.append(name)
+                td_def = self.typedef_defs[name]
+                if type(td_def.type) is c_ast.TypeDecl and type(td_def.type.type) is c_ast.Struct:
+                    structs.append(td_def.type.type.name)
+                    item_to_check = (0, td_def.type.type.name)
+                    if item_to_check not in to_check:
+                        to_check.append(item_to_check)
+            i += 1
+        return set(structs), set(typedefs)
