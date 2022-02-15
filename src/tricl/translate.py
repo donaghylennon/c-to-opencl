@@ -368,6 +368,8 @@ class Translator(c_ast.NodeVisitor):
         typedefs_needed = set()
         for param in args:
             tp = self.var_types[param]
+            while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
+                tp = tp.type
             if type(tp.type) is c_ast.Struct:
                 structs_needed.add(tp.type.name)
             elif type(tp.type) is c_ast.IdentifierType:
