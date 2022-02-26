@@ -11,6 +11,11 @@ class TranslationVisitor(c_ast.NodeVisitor):
     undeclared_in_omp: set
     function_calls: set
     structs: set
+    new_typedefs: set
+    typedefs_used: set
+
+    builtin_types = {"bool", "char", "unsigned", "char", "short", "int", "long", "float", "double", "size_t",
+                     "ptrdiff_t", "intptr_t", "uintptr_t", "void"}
 
     def translate_omp_parallel(self, node: c_ast.Node) -> str:
         self.omp_mode = True
@@ -21,6 +26,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         self.function_calls = set()
         self.structs = set()
+        self.new_typedefs = set()
+        self.typedefs_used = set()
         return self.visit(node)
 
     def translate_omp_parallel_for(self, node: c_ast.Node) -> str:
@@ -32,6 +39,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         self.function_calls = set()
         self.structs = set()
+        self.new_typedefs = set()
+        self.typedefs_used = set()
         return self.visit(node)
 
     def translate_function(self, node: c_ast.Node) -> str:
@@ -43,6 +52,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         self.function_calls = set()
         self.structs = set()
+        self.new_typedefs = set()
+        self.typedefs_used = set()
         return self.visit(node)
 
     def get_omp_kernel_args(self) -> set:
@@ -54,6 +65,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def get_structs(self) -> set:
         return self.structs
 
+    def get_typedefs_used(self) -> set:
+        return self.typedefs_used
+
     def generate_struct_def(self, node: c_ast.Node) -> str:
         self.omp_mode = False
         self.omp_parallel_for = False
@@ -62,6 +76,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         self.function_calls = set()
         self.structs = set()
+        self.new_typedefs = set()
+        self.typedefs_used = set()
         self.expand_structs = True
         return self.visit(node)
 
@@ -73,6 +89,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.undeclared_in_omp = set()
         self.function_calls = set()
         self.structs = set()
+        self.new_typedefs = set()
+        self.typedefs_used = set()
         self.expand_structs = True
         return self.visit(node)
 
@@ -131,6 +149,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return qualifiers + self.visit(node.type)
 
     def visit_Typedef(self, node: c_ast.Node) -> str:
+        self.new_typedefs.add(node.name)
         return "typedef " + self.visit(node.type) + " " + node.name
 
     def visit_Typename(self, node: c_ast.Node) -> str:
@@ -139,6 +158,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return qualifiers + self.visit(node.type) + name
 
     def visit_IdentifierType(self, node: c_ast.Node):
+        for name in node.names:
+            if name not in self.builtin_types and name not in self.new_typedefs:
+                self.typedefs_used.add(name)
         return " ".join(node.names)
 
     def visit_For(self, node: c_ast.Node) -> str:
@@ -272,10 +294,11 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return self.visit(node.name) + node.type + node.field.name
 
     def visit_Struct(self, node: c_ast.Node) -> str:
-        if node.decls:
-            self.structs.add(node)
+        if node.name:
+            self.structs.add(node.name)
+
         output = "struct " + (node.name + " " if node.name else "")
-        if self.expand_structs:
+        if self.expand_structs or node.name is None:
             output += "{\n"
             self.level_of_indentation += 1
             whitespace = "    " * self.level_of_indentation
@@ -302,16 +325,17 @@ class Translator(c_ast.NodeVisitor):
     typedef_defs: dict[str, c_ast.Node] = {}
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
-    structs: list[str] = []
-    typedefs: list[str] = []
+    structs: dict[str, str] = {}
+    typedefs: dict[str, str] = {}
     file_ast: c_ast.Node
+    within_typedef: bool = False
 
     def visit_FileAST(self, node: c_ast.Node) -> str:
         self.file_ast = node
         for child in node:
             self.visit(child)
-        return (";\n\n".join(self.structs) + ";\n\n" if self.structs else "") + \
-               (";\n\n".join(self.typedefs) + ";\n\n" if self.typedefs else "") + \
+        return (";\n\n".join(reversed(self.structs.values())) + ";\n\n" if self.structs else "") + \
+               (";\n\n".join(reversed(self.typedefs.values())) + ";\n\n" if self.typedefs else "") + \
                "\n".join(self.kernels)
 
     def visit_Decl(self, node: c_ast.Node) -> None:
@@ -320,15 +344,24 @@ class Translator(c_ast.NodeVisitor):
             self.visit(child)
 
     def visit_Typedef(self, node: c_ast.Node) -> None:
+        self.within_typedef = True
         self.typedef_defs[node.name] = node
         for child in node:
             self.visit(child)
+        self.within_typedef = False
 
     def visit_Struct(self, node: c_ast.Node) -> None:
-        if node.decls:
+        must_reset_within_typedef = False
+        if not self.within_typedef and node.decls and node.name:
             self.struct_defs[node.name] = node
+
+        if self.within_typedef:
+            must_reset_within_typedef = True
+            self.within_typedef = False
         for child in node:
             self.visit(child)
+        if must_reset_within_typedef:
+            self.within_typedef = True
 
     def visit_Compound(self, node: c_ast.Node) -> None:
         omp_parallel: bool = False
@@ -362,29 +395,6 @@ class Translator(c_ast.NodeVisitor):
             function_body = trans_visitor.translate_omp_parallel(node)
         args = trans_visitor.get_omp_kernel_args()
         function_calls = trans_visitor.get_function_calls()
-        structs = trans_visitor.get_structs()
-
-        structs_needed = set()
-        typedefs_needed = set()
-        for param in args:
-            tp = self.var_types[param]
-            while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
-                tp = tp.type
-            if type(tp.type) is c_ast.Struct:
-                s, t = self.get_needed_structs(tp.type.name)
-                structs_needed.update(s)
-                typedefs_needed.update(t)
-                structs_needed.add(tp.type.name)
-            elif type(tp.type) is c_ast.IdentifierType:
-                if tp.type.names[0] not in ["signed", "unsigned", "int", "long", "float", "double", "char",
-                                            "short"]:
-                    typedefs_needed.add(tp.type.names[0])
-                    td_def = self.typedef_defs[tp.type.names[0]]
-                    if type(td_def.type) is c_ast.TypeDecl and type(td_def.type.type) is c_ast.Struct:
-                        s, t = self.get_needed_structs(td_def.type.type.name)
-                        structs_needed.update(s)
-                        typedefs_needed.update(t)
-                        structs_needed.add(td_def.type.type.name)
 
         output += ", ".join([
             trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
@@ -392,6 +402,11 @@ class Translator(c_ast.NodeVisitor):
         ]) + ") {\n"
         output += function_body + "}\n"
         self.kernels.append(output)
+
+        structs = trans_visitor.get_structs()
+        typedefs = trans_visitor.get_typedefs_used()
+
+        self.retrieve_types(structs, typedefs, trans_visitor)
 
         while function_calls:
             new_calls = set()
@@ -402,64 +417,42 @@ class Translator(c_ast.NodeVisitor):
                     new_calls.update(trans_visitor.get_function_calls())
             function_calls = new_calls
 
-        for td in typedefs_needed:
-            td_def = self.typedef_defs[td]
-            code = trans_visitor.generate_typedefs(td_def)
-            self.typedefs.append(code)
-
-        for struct in structs_needed:
-            code = trans_visitor.generate_struct_def(self.struct_defs[struct])
-            self.structs.append(code)
-
     def find_function_def(self, name: str) -> Optional[c_ast.Node]:
         for child in self.file_ast:
             if type(child) is c_ast.FuncDef and child.decl.name == name:
                 return child
 
-    def get_needed_structs(self, struct: str) -> (set[str], set[str]):
-        structs = []
-        typedefs = []
-        to_check = []
-        struct_def = self.struct_defs[struct]
-        for decl in struct_def.decls:
-            tp = decl.type
-            while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
-                tp = tp.type
-            if type(tp) is c_ast.TypeDecl:
-                if type(tp.type) is c_ast.Struct:
-                    to_check.append((0, tp.type.name))
-                if type(tp.type) is c_ast.IdentifierType:
-                    if tp.type.names[0] not in ["signed", "unsigned", "int", "long", "float", "double", "char",
-                                                "short"]:
-                        to_check.append((1, tp.type.names[0]))
-        i = 0
-        while i < len(to_check):
-            s_or_td, name = to_check[i]
-            if s_or_td == 0:
-                structs.append(name)
-                struct_def = self.struct_defs[name]
-                for decl in struct_def.decls:
-                    tp = decl.type
-                    while type(tp) is c_ast.ArrayDecl or type(tp) is c_ast.PtrDecl:
-                        tp = tp.type
-                    if type(tp) is c_ast.TypeDecl:
-                        if type(tp.type) is c_ast.Struct:
-                            item_to_check = (0, tp.type.name)
-                            if item_to_check not in to_check:
-                                to_check.append(item_to_check)
-                        if type(tp.type) is c_ast.IdentifierType:
-                            if tp.type.names[0] not in ["signed", "unsigned", "int", "long", "float", "double", "char",
-                                                        "short"]:
-                                item_to_check = (1, tp.type.names[0])
-                                if item_to_check not in to_check:
-                                    to_check.append(item_to_check)
-            else:
-                typedefs.append(name)
-                td_def = self.typedef_defs[name]
-                if type(td_def.type) is c_ast.TypeDecl and type(td_def.type.type) is c_ast.Struct:
-                    structs.append(td_def.type.type.name)
-                    item_to_check = (0, td_def.type.type.name)
-                    if item_to_check not in to_check:
-                        to_check.append(item_to_check)
-            i += 1
-        return set(structs), set(typedefs)
+    def retrieve_types(self, structs: set[str], typedefs: set[str], visitor: TranslationVisitor) -> None:
+        structs_found: set[str] = set()
+        typedefs_found: set[str] = set()
+        for struct_name in structs:
+            struct_node = self.struct_defs[struct_name]
+            struct_code = visitor.generate_struct_def(struct_node)
+            if self.structs.get(struct_name) is None:
+                self.structs[struct_name] = struct_code
+
+                structs_inside = visitor.get_structs()
+                structs_inside.discard(struct_name)
+                structs_found.update(structs_inside)
+                typedefs_inside = visitor.get_typedefs_used()
+                typedefs_found.update(typedefs_inside)
+
+        for typedef_name in typedefs:
+            typedef_node = self.typedef_defs[typedef_name]
+            typedef_code = visitor.generate_typedefs(typedef_node)
+            if self.typedefs.get(typedef_name) is None:
+                self.typedefs[typedef_name] = typedef_code
+
+                if type(typedef_node.type) is c_ast.TypeDecl and type(typedef_node.type.type) is c_ast.Struct:
+                    struct = typedef_node.type.type
+                    if struct.name and struct.decls is None:
+                        structs_found.add(struct.name)
+                    else:
+                        structs_inside = visitor.get_structs()
+                        if struct.name: structs_inside.discard(struct.name)
+                        structs_found.update(structs_inside)
+                        typedefs_inside = visitor.get_typedefs_used()
+                        typedefs_found.update(typedefs_inside)
+
+        if structs_found or typedefs_found:
+            self.retrieve_types(structs_found, typedefs_found, visitor)
