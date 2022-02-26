@@ -7,15 +7,19 @@ class TranslationVisitor(c_ast.NodeVisitor):
     omp_mode: bool
     omp_parallel_for: bool
     expand_structs: bool
-    declared_in_omp: set
-    undeclared_in_omp: set
-    function_calls: set
-    structs: set
-    new_typedefs: set
-    typedefs_used: set
+    declared_in_omp: set[str]
+    undeclared_in_omp: set[str]
+    function_calls: set[str]
+    structs: set[str]
+    new_typedefs: set[str]
+    typedefs_used: set[str]
+    renamed_variables: dict[str, str]
 
     builtin_types = {"bool", "char", "unsigned", "char", "short", "int", "long", "float", "double", "size_t",
                      "ptrdiff_t", "intptr_t", "uintptr_t", "void"}
+    reserved_words = {"global", "local", "constant", "private", "generic", "kernel", "read_only", "write_only",
+                      "read_write", "uniform", "pipe", "__global", "__local", "__constant", "__private", "__generic",
+                      "__kernel", "__read_only", "__write_only", "__read_write", "__uniform", "__pipe"}
 
     def translate_omp_parallel(self, node: c_ast.Node) -> str:
         self.omp_mode = True
@@ -28,6 +32,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.structs = set()
         self.new_typedefs = set()
         self.typedefs_used = set()
+        self.renamed_variables = {}
         return self.visit(node)
 
     def translate_omp_parallel_for(self, node: c_ast.Node) -> str:
@@ -41,9 +46,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.structs = set()
         self.new_typedefs = set()
         self.typedefs_used = set()
+        self.renamed_variables = {}
         return self.visit(node)
 
-    def translate_function(self, node: c_ast.Node) -> str:
+    def translate_function(self, node: c_ast.Node, renamed: dict[str, str]) -> str:
         self.omp_mode = False
         self.omp_parallel_for = False
         self.expand_structs = False
@@ -54,19 +60,23 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.structs = set()
         self.new_typedefs = set()
         self.typedefs_used = set()
+        self.renamed_variables = renamed
         return self.visit(node)
 
-    def get_omp_kernel_args(self) -> set:
+    def get_omp_kernel_args(self) -> set[str]:
         return self.undeclared_in_omp
 
-    def get_function_calls(self) -> set:
+    def get_function_calls(self) -> set[str]:
         return self.function_calls
 
-    def get_structs(self) -> set:
+    def get_structs(self) -> set[str]:
         return self.structs
 
-    def get_typedefs_used(self) -> set:
+    def get_typedefs_used(self) -> set[str]:
         return self.typedefs_used
+
+    def get_renamed_variables(self) -> dict[str, str]:
+        return self.renamed_variables
 
     def generate_struct_def(self, node: c_ast.Node) -> str:
         self.omp_mode = False
@@ -78,6 +88,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.structs = set()
         self.new_typedefs = set()
         self.typedefs_used = set()
+        self.renamed_variables = {}
         self.expand_structs = True
         return self.visit(node)
 
@@ -91,6 +102,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.structs = set()
         self.new_typedefs = set()
         self.typedefs_used = set()
+        self.renamed_variables = {}
         self.expand_structs = True
         return self.visit(node)
 
@@ -103,13 +115,16 @@ class TranslationVisitor(c_ast.NodeVisitor):
     def visit_FuncDef(self, node: c_ast.Node) -> str:
         output: str = ""
         whitespace: str = "    " * self.level_of_indentation
-        func_name: str = node.decl.name
+
+        renamed = self.renamed_variables.get(node.decl.name)
+        func_name: str = renamed if renamed else node.decl.name
         func_type: str = node.decl.type.type.type.names[0]
 
         output += whitespace + func_type + " " + func_name + "("
 
         output += ", ".join([
-            self.generate_argument_type(param.type) + " " + param.name
+            self.generate_argument_type(param.type) + " " +
+            (self.renamed_variables[param.name] if self.renamed_variables.get(param.name) else param.name)
             for param in node.decl.type.args
         ]) + ") {\n"
 
@@ -133,9 +148,15 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return funcspec + storage + qualifiers + self.visit(node.type) + name + init
 
     def visit_ID(self, node: c_ast.Node) -> str:
+        renamed = self.renamed_variables.get(node.name)
+        name = renamed if renamed else node.name
         if self.omp_mode and node.name not in self.declared_in_omp:
             self.undeclared_in_omp.add(node.name)
-        return node.name
+        if not renamed and node.name in self.reserved_words:
+            renamed = node.name + "$"
+            self.renamed_variables[node.name] = renamed
+            return renamed
+        return name
 
     def visit_PtrDecl(self, node: c_ast.Node) -> str:
         qualifiers = " " + " ".join(node.quals) if node.quals else ""
@@ -237,6 +258,11 @@ class TranslationVisitor(c_ast.NodeVisitor):
             return "get_global_id(0)"
         elif node.name.name == "sqrt":
             pass
+        elif node.name.name in self.reserved_words:
+            renamed = node.name.name + "$"
+            self.renamed_variables[node.name.name] = renamed
+            self.function_calls.add(node.name.name)
+            return renamed + "(" + args + ")"
         else:
             self.function_calls.add(node.name.name)
         return node.name.name + "(" + args + ")"
@@ -320,7 +346,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
 
 class Translator(c_ast.NodeVisitor):
-    var_types: dict = {}
+    var_types: dict[str, c_ast.Node] = {}
     struct_defs: dict[str, c_ast.Node] = {}
     typedef_defs: dict[str, c_ast.Node] = {}
     next_omp_kernel_id: int = 0
@@ -395,9 +421,11 @@ class Translator(c_ast.NodeVisitor):
             function_body = trans_visitor.translate_omp_parallel(node)
         args = trans_visitor.get_omp_kernel_args()
         function_calls = trans_visitor.get_function_calls()
+        renamed_variables = trans_visitor.get_renamed_variables()
 
         output += ", ".join([
-            trans_visitor.generate_argument_type(self.var_types[param]) + " " + param
+            trans_visitor.generate_argument_type(self.var_types[param]) + " " +
+            (renamed_variables[param] if renamed_variables.get(param) else param)
             for param in args
         ]) + ") {\n"
         output += function_body + "}\n"
@@ -413,7 +441,7 @@ class Translator(c_ast.NodeVisitor):
             for call in function_calls:
                 function_def = self.find_function_def(call)
                 if function_def is not None:
-                    self.kernels.append(trans_visitor.translate_function(function_def))
+                    self.kernels.append(trans_visitor.translate_function(function_def, renamed_variables))
                     new_calls.update(trans_visitor.get_function_calls())
             function_calls = new_calls
 
