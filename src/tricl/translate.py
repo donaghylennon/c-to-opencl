@@ -393,6 +393,8 @@ class Translator(c_ast.NodeVisitor):
     typedef_defs: dict[str, c_ast.Node] = {}
     next_omp_kernel_id: int = 0
     kernels: list[str] = []
+    functions: list[str] = []
+    functions_generated: set[str] = set()
     structs: dict[str, str] = {}
     typedefs: dict[str, str] = {}
     file_ast: c_ast.Node
@@ -404,7 +406,7 @@ class Translator(c_ast.NodeVisitor):
             self.visit(child)
         return (";\n\n".join(reversed(self.structs.values())) + ";\n\n" if self.structs else "") + \
                (";\n\n".join(reversed(self.typedefs.values())) + ";\n\n" if self.typedefs else "") + \
-               "\n".join(self.kernels)
+            "\n".join(self.functions) + "\n".join(self.kernels)
 
     def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
@@ -481,10 +483,13 @@ class Translator(c_ast.NodeVisitor):
         while function_calls:
             new_calls = set()
             for call in function_calls:
+                if call in self.functions_generated:
+                    continue
                 function_def = self.find_function_def(call)
                 if function_def is not None:
-                    self.kernels.append(trans_visitor.translate_function(function_def, renamed_variables))
+                    self.functions.append(trans_visitor.translate_function(function_def, renamed_variables))
                     new_calls.update(trans_visitor.get_function_calls())
+                    self.functions_generated.add(call)
             function_calls = new_calls
 
     def find_function_def(self, name: str) -> Optional[c_ast.Node]:
