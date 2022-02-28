@@ -118,7 +118,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
         renamed = self.renamed_variables.get(node.decl.name)
         func_name: str = renamed if renamed else node.decl.name
-        func_type: str = node.decl.type.type.type.names[0]
+        func_type: str = self.visit(node.decl.type.type)
 
         output += whitespace + func_type + " " + func_name + "("
 
@@ -186,6 +186,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
     def visit_For(self, node: c_ast.Node) -> str:
         if self.omp_parallel_for:
+            self.omp_parallel_for = False
             self.level_of_indentation += 1
             output = ""
             whitespace = "    " * self.level_of_indentation
@@ -212,7 +213,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
             output += cond + "))\n"
             output += whitespace + "    " + "return;\n"
 
-            if type(node.stmt) == c_ast.Compound:
+            if type(node.stmt) is c_ast.Compound:
                 self.level_of_indentation -= 1
                 output += self.visit(node.stmt)
                 self.level_of_indentation += 1
@@ -227,11 +228,23 @@ class TranslationVisitor(c_ast.NodeVisitor):
             cond = self.visit(node.cond) if node.cond else ""
             nxt = self.visit(node.next) if node.next else ""
             output += init + "; " + cond + "; " + nxt + ") {\n"
-            if type(node.stmt) == c_ast.Compound:
+            if type(node.stmt) is c_ast.Compound:
                 output += self.visit(node.stmt)
             else:
                 output += (self.level_of_indentation + 1) * "    " + self.visit(node.stmt) + ";\n"
             output += whitespace + "}"
+        return output
+
+    def visit_While(self, node: c_ast.Node) -> str:
+        whitespace = self.level_of_indentation * "    "
+        output = "while ("
+        cond = self.visit(node.cond) if node.cond else ""
+        output += cond + ") {\n"
+        if type(node.stmt) is c_ast.Compound:
+            output += self.visit(node.stmt)
+        else:
+            output += (self.level_of_indentation + 1) * "    " + self.visit(node.stmt) + ";\n"
+        output += whitespace + "}"
         return output
 
     def visit_Compound(self, node: c_ast.Node) -> str:
@@ -241,8 +254,8 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.level_of_indentation += 1
         whitespace: str = "    " * self.level_of_indentation
         for child in node:
-            if type(child) == c_ast.If or type(child) == c_ast.For or type(child) == c_ast.While or \
-                    type(child) == c_ast.DoWhile:
+            if type(child) is c_ast.If or type(child) is c_ast.For or type(child) is c_ast.While or \
+                    type(child) is c_ast.DoWhile or type(child) is c_ast.Switch or type(child) is c_ast.Case:
                 line_terminate = "\n"
             else:
                 line_terminate = ";\n"
@@ -279,26 +292,49 @@ class TranslationVisitor(c_ast.NodeVisitor):
         else:
             return node.op + self.visit(node.expr)
 
+    def visit_TernaryOp(self, node: c_ast.Node) -> str:
+        return "(" + self.visit(node.cond) + " ? " + self.visit(node.iftrue) + " : " + self.visit(node.iffalse) + ")"
+
     def visit_Constant(self, node: c_ast.Node) -> str:
         return node.value
 
     def visit_If(self, node: c_ast.Node) -> str:
         whitespace = self.level_of_indentation * "    "
         output = "if (" + self.visit(node.cond) + ") {\n"
-        self.level_of_indentation += 1
         if type(node.iftrue) == c_ast.Compound:
             output += self.visit(node.iftrue)
         else:
-            output += self.level_of_indentation * "    " + self.visit(node.iftrue) + ";"
+            output += (self.level_of_indentation + 1) * "    " + self.visit(node.iftrue) + ";\n"
         if node.iffalse:
             if type(node.iffalse) == c_ast.If:
                 output += whitespace + "} else " + self.visit(node.iffalse)
             elif type(node.iffalse) == c_ast.Compound:
                 output += whitespace + "} else {\n" + self.visit(node.iffalse)
+                output += whitespace + "}"
             else:
-                output += whitespace + "} else {\n" + whitespace + self.visit(node.iffalse) + ";"
+                output += whitespace + "} else {\n" + (self.level_of_indentation + 1) * "    " + \
+                          self.visit(node.iffalse) + ";"
+                output += "\n" + whitespace + "}"
+        else:
+            output += whitespace + "}"
+        return output
+
+    def visit_Switch(self, node: c_ast.Node) -> str:
+        whitespace = self.level_of_indentation * "    "
+        output = "switch (" + self.visit(node.cond) + ") {\n"
+        output += self.visit(node.stmt)
+        output += whitespace + "}"
+        return output
+
+    def visit_Case(self, node: c_ast.Node) -> str:
+        self.level_of_indentation += 1
+        whitespace = self.level_of_indentation * "    "
+        output = "case " + self.visit(node.expr) + ":\n"
+        for stmt in node.stmts:
+            seperator = (";\n" if type(stmt) not in (c_ast.If, c_ast.For, c_ast.While, c_ast.DoWhile,
+                                                     c_ast.Switch, c_ast.Case) else "\n")
+            output += whitespace + self.visit(stmt) + seperator
         self.level_of_indentation -= 1
-        output += "\n" + whitespace + "}"
         return output
 
     def visit_Assignment(self, node: c_ast.Node) -> str:
@@ -343,6 +379,12 @@ class TranslationVisitor(c_ast.NodeVisitor):
 
     def visit_Cast(self, node: c_ast.Node) -> str:
         return "(" + self.visit(node.to_type) + ")" + self.visit(node.expr)
+
+    def visit_Break(self, node: c_ast.Node) -> str:
+        return "break"
+
+    def visit_Pragma(self, node: c_ast.Node) -> str:
+        return ""
 
 
 class Translator(c_ast.NodeVisitor):
@@ -400,10 +442,10 @@ class Translator(c_ast.NodeVisitor):
                 self.extract_kernel_from_omp(child, True)
                 omp_parallel_for = False
             elif type(child) == c_ast.Pragma:
-                if child.string == "omp parallel":
-                    omp_parallel = True
-                elif child.string == "omp parallel for":
+                if child.string.startswith("omp parallel for"):
                     omp_parallel_for = True
+                elif child.string.startswith("omp parallel"):
+                    omp_parallel = True
             else:
                 self.visit(child)
 
