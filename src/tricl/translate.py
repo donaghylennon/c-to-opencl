@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional
 from pycparser import c_ast
 
@@ -14,12 +15,27 @@ class TranslationVisitor(c_ast.NodeVisitor):
     new_typedefs: set[str]
     typedefs_used: set[str]
     renamed_variables: dict[str, str]
+    domain_size: str
 
     builtin_types = {"bool", "char", "unsigned", "char", "short", "int", "long", "float", "double", "size_t",
                      "ptrdiff_t", "intptr_t", "uintptr_t", "void"}
     reserved_words = {"global", "local", "constant", "private", "generic", "kernel", "read_only", "write_only",
                       "read_write", "uniform", "pipe", "__global", "__local", "__constant", "__private", "__generic",
                       "__kernel", "__read_only", "__write_only", "__read_write", "__uniform", "__pipe"}
+
+    def __init__(self):
+        self.level_of_indentation = 0
+        self.omp_mode = False
+        self.omp_parallel_for = False
+        self.expand_structs = False
+        self.declared_in_omp = set()
+        self.undeclared_in_omp = set()
+        self.function_calls = set()
+        self.structs = set()
+        self.new_typedefs = set()
+        self.typedefs_used = set()
+        self.renamed_variables = {}
+        self.domain_size = None
 
     def translate_omp_parallel(self, node: c_ast.Node) -> str:
         self.omp_mode = True
@@ -33,9 +49,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.new_typedefs = set()
         self.typedefs_used = set()
         self.renamed_variables = {}
+        self.domain_size = None
         return self.visit(node)
 
-    def translate_omp_parallel_for(self, node: c_ast.Node) -> str:
+    def translate_omp_parallel_for(self, node: c_ast.Node) -> (int, str):
         self.omp_mode = True
         self.omp_parallel_for = True
         self.expand_structs = False
@@ -47,7 +64,10 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.new_typedefs = set()
         self.typedefs_used = set()
         self.renamed_variables = {}
-        return self.visit(node)
+        self.domain_size = None
+
+        kernel = self.visit(node)
+        return self.domain_size, kernel
 
     def translate_function(self, node: c_ast.Node, renamed: dict[str, str]) -> str:
         self.omp_mode = False
@@ -61,6 +81,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.new_typedefs = set()
         self.typedefs_used = set()
         self.renamed_variables = renamed
+        self.domain_size = None
         return self.visit(node)
 
     def get_omp_kernel_args(self) -> set[str]:
@@ -90,6 +111,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.typedefs_used = set()
         self.renamed_variables = {}
         self.expand_structs = True
+        self.domain_size = None
         return self.visit(node)
 
     def generate_typedefs(self, node: c_ast.Node) -> str:
@@ -104,6 +126,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
         self.typedefs_used = set()
         self.renamed_variables = {}
         self.expand_structs = True
+        self.domain_size = None
         return self.visit(node)
 
     def generate_argument_type(self, node: c_ast.Node) -> str:
@@ -191,6 +214,9 @@ class TranslationVisitor(c_ast.NodeVisitor):
             output = ""
             whitespace = "    " * self.level_of_indentation
             indexes = []
+
+            if type(node.cond) is c_ast.BinaryOp:
+                self.domain_size = self.visit(node.cond.right)
 
             if type(node.init) is c_ast.Assignment:
                 indexes.append(node.init.lvalue.name)
@@ -387,6 +413,21 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return ""
 
 
+@dataclass
+class KernelArg:
+    name: str
+    type: c_ast.Node
+    size: int
+
+
+@dataclass
+class KernelInfo:
+    src_start_line: int
+    domain_size: str
+    name: str
+    args: list[KernelArg]
+
+
 class Translator(c_ast.NodeVisitor):
     var_types: dict[str, c_ast.Node] = {}
     struct_defs: dict[str, c_ast.Node] = {}
@@ -397,6 +438,8 @@ class Translator(c_ast.NodeVisitor):
     functions_generated: set[str] = set()
     structs: dict[str, str] = {}
     typedefs: dict[str, str] = {}
+    kernels_info: list[KernelInfo] = []
+    var_sizes: dict[str, int] = {}
     file_ast: c_ast.Node
     within_typedef: bool = False
 
@@ -410,6 +453,19 @@ class Translator(c_ast.NodeVisitor):
 
     def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
+        self.var_sizes[node.name] = None
+        if node.type is c_ast.ArrayDecl:
+            self.var_sizes[node.name] = node.type.dim
+        for child in node:
+            self.visit(child)
+
+    def visit_Assignment(self, node: c_ast.Node) -> None:
+        if type(node.lvalue) is c_ast.ID:
+            rvalue = node.rvalue
+            if type(rvalue) is c_ast.Cast:
+                rvalue = rvalue.expr
+            if type(rvalue) is c_ast.FuncCall and rvalue.name.name == "malloc":
+                self.var_sizes[node.lvalue.name] = TranslationVisitor().visit(rvalue.args.exprs[0])
         for child in node:
             self.visit(child)
 
@@ -456,24 +512,31 @@ class Translator(c_ast.NodeVisitor):
         # declared + used variables -- used but not declared == kernel argument
         k_id = self.next_omp_kernel_id
         self.next_omp_kernel_id += 1
-        output: str = f"__kernel void omp_translated_kernel{k_id}("
+        kernel_name: str = f"omp_translated_kernel{k_id}"
+        output: str = f"__kernel void {kernel_name}("
         trans_visitor: TranslationVisitor = TranslationVisitor()
 
+        line = node.coord.line
+        domain_size = None
         if parallel_for:
-            function_body = trans_visitor.translate_omp_parallel_for(node)
+            domain_size, function_body = trans_visitor.translate_omp_parallel_for(node)
         else:
             function_body = trans_visitor.translate_omp_parallel(node)
         args = trans_visitor.get_omp_kernel_args()
         function_calls = trans_visitor.get_function_calls()
         renamed_variables = trans_visitor.get_renamed_variables()
 
-        output += ", ".join([
-            trans_visitor.generate_argument_type(self.var_types[param]) + " " +
-            (renamed_variables[param] if renamed_variables.get(param) else param)
-            for param in args
-        ]) + ") {\n"
+        args_info: list[KernelArg] = []
+        args_code: list[str] = []
+        for arg in args:
+            args_info.append(KernelArg(arg, self.var_types[arg], self.var_sizes[arg]))
+            args_code.append(trans_visitor.generate_argument_type(self.var_types[arg]) + " " +
+                             (renamed_variables[arg] if renamed_variables.get(arg) else arg))
+
+        output += ", ".join(args_code) + ") {\n"
         output += function_body + "}\n"
         self.kernels.append(output)
+        self.kernels_info.append(KernelInfo(line, domain_size, kernel_name, args_info))
 
         structs = trans_visitor.get_structs()
         typedefs = trans_visitor.get_typedefs_used()
