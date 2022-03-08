@@ -13,7 +13,7 @@ def main():
     argparser.add_argument('kernel_file', help='path to write cl file containing kernel code')
     args = argparser.parse_args()
 
-    cpp_args = ["-Iutils/fake_libc_include"]
+    cpp_args = ["-Iutils/fake_libc_include", "-Iutils/fake_omp_include"]
     if args.I:
         cpp_args += ["-I" + path for path in args.I]
 
