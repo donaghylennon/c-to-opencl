@@ -307,16 +307,16 @@ class TranslationVisitor(c_ast.NodeVisitor):
         return node.name.name + "(" + args + ")"
 
     def visit_BinaryOp(self, node: c_ast.Node) -> str:
-        return self.visit(node.left) + f" {node.op} " + self.visit(node.right)
+        return "(" + self.visit(node.left) + f" {node.op} " + self.visit(node.right) + ")"
 
     def visit_UnaryOp(self, node: c_ast.Node) -> str:
         op = node.op
         if op == "sizeof":
             return op + "(" + self.visit(node.expr) + ")"
         elif op[0] == "p":
-            return node.op.replace("p", self.visit(node.expr))
+            return "(" + node.op.replace("p", self.visit(node.expr)) + ")"
         else:
-            return node.op + self.visit(node.expr)
+            return "(" + node.op + self.visit(node.expr) + ")"
 
     def visit_TernaryOp(self, node: c_ast.Node) -> str:
         return "(" + self.visit(node.cond) + " ? " + self.visit(node.iftrue) + " : " + self.visit(node.iffalse) + ")"
