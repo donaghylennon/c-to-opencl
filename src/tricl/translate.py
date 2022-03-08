@@ -443,6 +443,9 @@ class Translator(c_ast.NodeVisitor):
     file_ast: c_ast.Node
     within_typedef: bool = False
 
+    def get_kernels_info(self) -> list[KernelInfo]:
+        return self.kernels_info
+
     def visit_FileAST(self, node: c_ast.Node) -> str:
         self.file_ast = node
         for child in node:

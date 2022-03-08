@@ -20,10 +20,10 @@ def main():
     ast = pycparser.parse_file(args.input_file, use_cpp=True, cpp_args=cpp_args)
     visitor = translate.Translator()
     cl_output = visitor.visit(ast)
+    kernels_info = visitor.get_kernels_info()
+    host_code = host.process_original_file(args.input_file, kernels_info, args.kernel_file)
     with open(args.kernel_file, 'w') as f:
         f.write(cl_output)
-    host_details = host.HostDetails.from_ast(ast)
-    host_code = host_details.generate_code(args.kernel_file)
     with open(args.output_file, 'w') as f:
         f.write(host_code)
 
