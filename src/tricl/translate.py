@@ -15,7 +15,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
     new_typedefs: set[str]
     typedefs_used: set[str]
     renamed_variables: dict[str, str]
-    domain_size: str
+    domain_size: Optional[str]
 
     builtin_types = {"bool", "char", "unsigned", "char", "short", "int", "long", "float", "double", "size_t",
                      "ptrdiff_t", "intptr_t", "uintptr_t", "void"}
@@ -417,7 +417,7 @@ class TranslationVisitor(c_ast.NodeVisitor):
 class KernelArg:
     name: str
     type: c_ast.Node
-    size: int
+    size: str
 
 
 @dataclass
@@ -439,7 +439,7 @@ class Translator(c_ast.NodeVisitor):
     structs: dict[str, str] = {}
     typedefs: dict[str, str] = {}
     kernels_info: list[KernelInfo] = []
-    var_sizes: dict[str, int] = {}
+    var_sizes: dict[str, c_ast.Node] = {}
     file_ast: c_ast.Node
     within_typedef: bool = False
 
@@ -465,7 +465,7 @@ class Translator(c_ast.NodeVisitor):
             if type(rvalue) is c_ast.Cast:
                 rvalue = rvalue.expr
             if type(rvalue) is c_ast.FuncCall and rvalue.name.name == "malloc":
-                self.var_sizes[node.lvalue.name] = TranslationVisitor().visit(rvalue.args.exprs[0])
+                self.var_sizes[node.lvalue.name] = rvalue.args.exprs[0]
         for child in node:
             self.visit(child)
 
@@ -528,8 +528,22 @@ class Translator(c_ast.NodeVisitor):
 
         args_info: list[KernelArg] = []
         args_code: list[str] = []
+        args_from_size: set[str] = set()
+        size_visitor = TranslationVisitor()
         for arg in args:
-            args_info.append(KernelArg(arg, self.var_types[arg], self.var_sizes[arg]))
+            size_val = "0"
+            size = self.var_sizes[arg]
+            if size:
+                _, size_val = size_visitor.translate_omp_parallel_for(size)
+            args_from_size.update(size_visitor.get_omp_kernel_args())
+            args_info.append(KernelArg(arg, self.var_types[arg], size_val))
+            args_code.append(trans_visitor.generate_argument_type(self.var_types[arg]) + " " +
+                             (renamed_variables[arg] if renamed_variables.get(arg) else arg))
+
+        for arg in args_from_size:
+            if arg in args:
+                continue
+            args_info.append(KernelArg(arg, self.var_types[arg], "0"))  # Assume anything in size not buffer
             args_code.append(trans_visitor.generate_argument_type(self.var_types[arg]) + " " +
                              (renamed_variables[arg] if renamed_variables.get(arg) else arg))
 
