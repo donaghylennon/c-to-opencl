@@ -2,13 +2,12 @@ from tricl.translate import KernelInfo, TranslationVisitor
 from pycparser import c_ast
 
 
-def generate_host_function(kernel_info: KernelInfo, kernel_path: str) -> str:
+def generate_host_function(kernel_id: int, kernel_info: KernelInfo) -> str:
     visitor = TranslationVisitor()
     with open("host_function.c.template", "r") as f:
         template = f.read()
 
-    template = template.replace("<KERNEL NAME>", f'"{kernel_info.name}"')
-    template = template.replace("<SOURCE FILEPATH>", f'"{kernel_path}"')
+    template = template.replace("<KERNEL_ID>", f"{kernel_id}")
 
     buffer_decls = []
     create_buffers = []
@@ -44,7 +43,7 @@ def generate_host_function(kernel_info: KernelInfo, kernel_path: str) -> str:
                                    "        fprintf(stderr, \"OpenCL Error: Failed to release buffer. %d\\n\", err);\n"
                                    "        exit(EXIT_FAILURE);\n"
                                    "    }\n")
-            set_kernel_args.append(f"err = clSetKernelArg(kernel, {i}, sizeof(cl_mem), "
+            set_kernel_args.append(f"err = clSetKernelArg(kernel{kernel_id}, {i}, sizeof(cl_mem), "
                                    f"&{arg.name}_cl);\n"
                                    "    if (err != CL_SUCCESS) {\n"
                                    "        fprintf(stderr, \"OpenCL Error: Failed to set kernel argument. %d\\n\", "
@@ -53,7 +52,7 @@ def generate_host_function(kernel_info: KernelInfo, kernel_path: str) -> str:
                                    "    }\n")
         else:
             tp = visitor.generate_argument_type(arg.type)
-            set_kernel_args.append(f"err = clSetKernelArg(kernel, {i}, sizeof({tp}), &{arg.name});\n"
+            set_kernel_args.append(f"err = clSetKernelArg(kernel{kernel_id}, {i}, sizeof({tp}), &{arg.name});\n"
                                    "    if (err != CL_SUCCESS) {\n"
                                    "        fprintf(stderr, \"OpenCL Error: Failed to set kernel argument. %d\\n\", "
                                    "err);\n"
@@ -75,7 +74,7 @@ def generate_host_functions(kernels_info: list[KernelInfo], kernel_path: str) ->
     functions = []
     calls = []
     decls = []
-    for kernel_info in kernels_info:
+    for i, kernel_info in enumerate(kernels_info):
         func = f"void {kernel_info.name}(int domain_size, "
         call = f"{kernel_info.name}({kernel_info.domain_size}, "
 
@@ -101,7 +100,7 @@ def generate_host_functions(kernels_info: list[KernelInfo], kernel_path: str) ->
         decl = func + ");\n"
         func += ") {\n    "
         func += ("\n    ".join(pointer_derefs) + "\n") if pointer_derefs else ""
-        func += generate_host_function(kernel_info, kernel_path)
+        func += generate_host_function(i, kernel_info)
         func += ("\n    " + "\n    ".join(pointer_writes) + "\n") if pointer_writes else ""
         func += "}\n"
         functions.append(func)
@@ -114,7 +113,10 @@ def generate_host_functions(kernels_info: list[KernelInfo], kernel_path: str) ->
 
 
 def process_original_file(file: str, kernels_info: list[KernelInfo], kernel_path: str) -> str:
+    opencl_decls, boilerplate_functions = generate_boilerplate(kernels_info, kernel_path)
     functions, calls, decls = generate_host_functions(kernels_info, kernel_path)
+    decls = [opencl_decls] + decls
+    functions = functions + [boilerplate_functions]
     with open(file, "r") as f:
         lines = f.readlines()
     gaps = []
@@ -139,11 +141,16 @@ def process_original_file(file: str, kernels_info: list[KernelInfo], kernel_path
         gaps.append((k, ki.src_start_line-1, end))
 
     new_lines = []
+    in_main = False
     for i, line in enumerate(lines):
         if i == 0:
             new_lines.append("#include <CL/cl.h>\n")
         if line.find("main(") >= 0:
+            in_main = True
             new_lines.append("".join(decls) + "\n")
+        if line == "}\n" and in_main:
+            in_main = False
+            new_lines.append("\topencl_teardown();\n")
         ignored = False
         for j, gap in enumerate(gaps):
             k, start, end = gap
@@ -154,5 +161,57 @@ def process_original_file(file: str, kernels_info: list[KernelInfo], kernel_path
                     included[k] = True
         if not ignored:
             new_lines.append(line)
+            if line.find("main(") >= 0:
+                new_lines.append("\topencl_setup();\n")
 
     return "".join(new_lines) + "".join(functions)
+
+
+def generate_boilerplate(kernels_info: list[KernelInfo], kernel_path: str) -> (str, str):
+    opencl_decls = ("cl_device_id device_id;\n"
+                    "cl_context context;\n"
+                    "cl_command_queue command_queue;\n"
+                    "cl_program program;\n"
+                    "cl_int err;\n"
+                    "void opencl_setup();\n"
+                    "void opencl_teardown();\n")
+
+    with open("setup.c.template", "r") as f:
+        setup_function = f.read()
+
+    setup_function = setup_function.replace("<SOURCE FILEPATH>", f"\"{kernel_path}\"")
+
+    create_kernels = ""
+    release_kernels = ""
+    for i, kernel_info in enumerate(kernels_info):
+        opencl_decls += (f"cl_kernel kernel{i};\n"
+                         f"size_t local{i};\n")
+        create_kernels += (
+            f'\tkernel{i} = clCreateKernel(program, "{kernel_info.name}", &err);\n'
+            f"\tif (!kernel{i} || err != CL_SUCCESS)\n"
+            "\t{\n"
+            '\t\tfprintf(stderr, "OpenCL Error: Failed to create kernel: %d!\\n", err);\n'
+            "\t\texit(EXIT_FAILURE);\n"
+            "\t}\n"
+            f"\terr = clGetKernelWorkGroupInfo(kernel{i}, device_id, CL_KERNEL_WORK_GROUP_SIZE, sizeof(local{i}), &local{i}, NULL);\n"
+            "\tif (err != CL_SUCCESS) {\n"
+            '\t\tfprintf(stderr, "OpenCL Error: Failed to retrieve kernel work group info: %d\\n", err);\n'
+            "\t\texit(EXIT_FAILURE);\n"
+            "\t}\n"
+        )
+        release_kernels += (
+            f"\terr = clReleaseKernel(kernel{i});\n"
+            "\tif (err != CL_SUCCESS) {\n"
+            '\t\tfprintf(stderr, "OpenCL Error: Failed to release kernel: %d!\\n", err);\n'
+            "\t\texit(EXIT_FAILURE);\n"
+            "\t}\n"
+        )
+    setup_function = setup_function.replace("<CREATE KERNELS>", create_kernels)
+
+    with open("teardown.c.template", "r") as f:
+        teardown_function = f.read()
+
+    teardown_function = teardown_function.replace("<RELEASE KERNELS>", release_kernels)
+
+    boilerplate_functions = setup_function + teardown_function
+    return opencl_decls, boilerplate_functions

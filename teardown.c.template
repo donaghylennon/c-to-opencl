@@ -1,0 +1,19 @@
+void opencl_teardown() {
+    // Release allocated OpenCL resources
+    err = clReleaseProgram(program);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release program: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+<RELEASE KERNELS>
+    err = clReleaseCommandQueue(command_queue);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release command queue: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+    err = clReleaseContext(context);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to release context: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+}

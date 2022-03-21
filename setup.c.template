@@ -1,0 +1,81 @@
+void opencl_setup() {
+    const char *filepath = <SOURCE FILEPATH>;
+    FILE *source_file;
+    size_t source_size;
+    char *source_buffer;
+
+    cl_uint number_of_platforms;
+    cl_platform_id *platforms;
+
+    // Retrieve available platforms and devices on those platforms,
+    // and choose one to execute our kernel
+    err = clGetPlatformIDs(0, NULL, &number_of_platforms);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to get number of platform: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    platforms = malloc(sizeof(cl_platform_id) * number_of_platforms);
+    err = clGetPlatformIDs(number_of_platforms, platforms, NULL);
+    if (err != CL_SUCCESS) {
+        fprintf(stderr,"OpenCL Error: Failed to get platform IDs: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    err = clGetDeviceIDs(platforms[0], CL_DEVICE_TYPE_ALL, 1, &device_id, NULL);
+    if (err != CL_SUCCESS)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to get device IDs: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+    free(platforms);
+
+    // Create context and command queue using chosen device
+    context = clCreateContext(0, 1, &device_id, NULL, NULL, &err);
+    if (!context)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create context: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    command_queue = clCreateCommandQueue(context, device_id, 0, &err);
+    if (!command_queue)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create command queue: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    // Read source file into buffer
+    source_file = fopen(filepath, "r");
+    fseek(source_file, 0, SEEK_END);
+    source_size = ftell(source_file);
+    rewind(source_file);
+
+    source_buffer = (char*)malloc(source_size + 1);
+    source_buffer[source_size] = '\0';
+    fread(source_buffer, sizeof(char), source_size, source_file);
+    fclose(source_file);
+
+    // Create program, compile and create kernel
+    program = clCreateProgramWithSource(context, 1, (const char**) &source_buffer, &source_size, &err);
+    free(source_buffer);
+    if (!program)
+    {
+        fprintf(stderr,"OpenCL Error: Failed to create program with source: %d!\n", err);
+        exit(EXIT_FAILURE);
+    }
+
+    err = clBuildProgram(program, 0, NULL, NULL, NULL, NULL);
+    if (err != CL_SUCCESS)
+    {
+        size_t len;
+        char buffer[2048];
+
+        fprintf(stderr,"OpenCL Error: Failed to build program executable: %d!\n", err);
+        clGetProgramBuildInfo(program, device_id, CL_PROGRAM_BUILD_LOG, sizeof(buffer), buffer, &len);
+        fprintf(stderr,"%s\n", buffer);
+        exit(EXIT_FAILURE);
+    }
+
+<CREATE KERNELS>
+}
