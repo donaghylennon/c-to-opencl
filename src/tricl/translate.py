@@ -457,8 +457,11 @@ class Translator(c_ast.NodeVisitor):
     def visit_Decl(self, node: c_ast.Node) -> None:
         self.var_types[node.name] = node.type
         self.var_sizes[node.name] = None
-        if node.type is c_ast.ArrayDecl:
+        if type(node.type) is c_ast.ArrayDecl:
             self.var_sizes[node.name] = node.type.dim
+        elif type(node.type) is c_ast.PtrDecl and node.init and type(node.init) is c_ast.FuncCall\
+                and node.init.name.name == "malloc":
+            self.var_sizes[node.name] = node.init.args.exprs[0]
         for child in node:
             self.visit(child)
 

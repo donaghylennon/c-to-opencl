@@ -17,8 +17,8 @@ def generate_host_function(kernel_id: int, kernel_info: KernelInfo) -> str:
     set_kernel_args = []
 
     for i, arg in enumerate(kernel_info.args):
-        if type(arg.type) is c_ast.PtrDecl:
-            tp = visitor.generate_argument_type(arg.type.type)
+        if type(arg.type) is c_ast.PtrDecl or type(arg.type) is c_ast.ArrayDecl:
+            tp = visitor.visit(arg.type.type)
             buffer_decls.append(f"cl_mem {arg.name}_cl;")
             create_buffers.append(f"{arg.name}_cl = clCreateBuffer(context, CL_MEM_READ_WRITE, "
                                   f"{arg.size}, NULL, &err);\n"
@@ -51,7 +51,7 @@ def generate_host_function(kernel_id: int, kernel_info: KernelInfo) -> str:
                                    "        exit(EXIT_FAILURE);\n"
                                    "    }\n")
         else:
-            tp = visitor.generate_argument_type(arg.type)
+            tp = visitor.visit(arg.type)
             set_kernel_args.append(f"err = clSetKernelArg(kernel{kernel_id}, {i}, sizeof({tp}), &{arg.name});\n"
                                    "    if (err != CL_SUCCESS) {\n"
                                    "        fprintf(stderr, \"OpenCL Error: Failed to set kernel argument. %d\\n\", "
@@ -122,7 +122,7 @@ def process_original_file(file: str, kernels_info: list[KernelInfo], kernel_path
     gaps = []
     included = [False for _ in kernels_info]
     for k, ki in enumerate(kernels_info):
-        start = ki.src_start_line + 1
+        start = ki.src_start_line #+ 1
         num_open_braces = 0
         ended = False
         end = -1
@@ -143,8 +143,13 @@ def process_original_file(file: str, kernels_info: list[KernelInfo], kernel_path
     new_lines = []
     in_main = False
     for i, line in enumerate(lines):
+        if line.startswith("#pragma omp"):
+            continue
         if i == 0:
             new_lines.append("#include <CL/cl.h>\n")
+        if line.startswith('#'):
+            new_lines.append(line)
+            continue
         if line.find("main(") >= 0:
             in_main = True
             new_lines.append("".join(decls) + "\n")
