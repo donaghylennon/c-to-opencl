@@ -1,4 +1,4 @@
-from tricl.translate import KernelInfo, TranslationVisitor
+from .translate import KernelInfo, TranslationVisitor
 from pycparser import c_ast
 
 

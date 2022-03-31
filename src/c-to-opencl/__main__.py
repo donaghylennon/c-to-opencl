@@ -1,8 +1,8 @@
 import argparse
 import pycparser
 
-from tricl import translate
-from tricl import host
+from . import translate
+from . import host
 
 
 def main():

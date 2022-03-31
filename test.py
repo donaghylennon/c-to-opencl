@@ -63,13 +63,13 @@ def main(do_compile, run, translate):
                     in_p = subprocess.run([bin_in_path, size, "time"], capture_output=True)
                     out_p = subprocess.run([bin_out_path, size, "time"], capture_output=True)
 
-                    in_times.append(int(in_p.stdout))
-                    out_times.append(int(out_p.stdout))
+                    in_times.append(int(in_p.stdout.decode('utf-8')))
+                    out_times.append(int(out_p.stdout.decode('utf-8')))
                 averages_in[file][size] = sum(in_times) / len(in_times)
                 averages_out[file][size] = sum(out_times) / len(out_times)
 
-        # print(f"{averages_in=}")
-        # print(f"{averages_out=}")
+        print(f"{averages_in=}")
+        print(f"{averages_out=}")
         for file in files:
             sizes_in = averages_in[file].keys()
             sizes_out = averages_out[file].keys()
@@ -77,9 +77,12 @@ def main(do_compile, run, translate):
             times_out = [averages_out[file][k] for k in sizes_out]
 
             fig, ax = plt.subplots()
-            ax.plot(sizes_in, times_in, 'blue', marker='o')
-            ax.plot(sizes_out, times_out, 'red', marker='o')
-            fig.savefig(f"{file[:-2]}.png")
+            ax.plot(sizes_in, times_in, 'blue', marker='o', label='input version')
+            ax.plot(sizes_out, times_out, 'red', marker='o', label='translated version')
+            ax.legend()
+            ax.set_ylabel("Execution time (microseconds)")
+            ax.set_xlabel("Array size")
+            fig.savefig(f"{file[:-2]}.pdf")
 
 
 if __name__ == "__main__":
