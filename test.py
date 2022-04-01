@@ -24,7 +24,7 @@ def main(do_compile, run, translate):
         bin_out_paths.append(bin_outputs_path + file[:-2])
         cl_path = out_path + "l"
         if translate:
-            p = subprocess.run(["python", "src/tricl/__main__.py",  in_path, out_path, cl_path])
+            p = subprocess.run(["python", "src/c-to-opencl/__main__.py",  in_path, out_path, cl_path])
 
     if do_compile:
         for in_path, bin_in_path in zip(in_paths, bin_in_paths):
