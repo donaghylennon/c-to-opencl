@@ -6,7 +6,7 @@ from . import host
 
 
 def main():
-    argparser = argparse.ArgumentParser(prog="tricl")
+    argparser = argparse.ArgumentParser(prog="c-to-opencl")
     argparser.add_argument('-I', help='c include path', action="append")
     argparser.add_argument('-D', help='c macro definition', action="append")
     argparser.add_argument('input_file', help='path to c file to translate')
